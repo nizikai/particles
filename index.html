@@ -22,6 +22,8 @@
 		#webgl {
 			position: fixed;
 			inset: 0;
+			width: 100vw;
+			height: 100dvh;
 			display: block;
 			touch-action: none;
 		}
@@ -115,24 +117,96 @@
 			const isLowSpecMobile = isTouch && (isIOS || isAndroid);
 			const desktopCores = navigator.hardwareConcurrency || 8;
 
-				const BASE_PIXEL_RATIO_CAP = isIPhoneX ? 0.74 : isLowSpecMobile ? 0.98 : isTouch ? 1.32 : 1.9;
+			function getViewportSize() {
+				const visualViewport = window.visualViewport;
+				return {
+					width: Math.max(1, Math.round(visualViewport?.width || window.innerWidth)),
+					height: Math.max(1, Math.round(visualViewport?.height || window.innerHeight))
+				};
+			}
+
+			function isPortraitViewport() {
+				const viewport = getViewportSize();
+				return viewport.height > viewport.width;
+			}
+
+			function isMobilePortraitViewport() {
+				const viewport = getViewportSize();
+				return isTouch && viewport.height > viewport.width && viewport.width <= 720;
+			}
+
+			function getDesiredPixelRatioCap() {
+				if (!isTouch) return 1.9;
+				if (isIPhoneX) return isPortraitViewport() ? 1.38 : 1.22;
+				if (isLowSpecMobile) return isPortraitViewport() ? 1.72 : 1.42;
+				return isPortraitViewport() ? 1.88 : 1.55;
+			}
+
+			function getMinimumPixelRatioCap() {
+				if (!isTouch) return 1.18;
+				if (isIPhoneX) return 1.16;
+				if (isLowSpecMobile) return 1.28;
+				return 1.36;
+			}
+
+				const BASE_PIXEL_RATIO_CAP = getDesiredPixelRatioCap();
 				const OCEAN_GRID_X = isIPhoneX ? 160 : isLowSpecMobile ? 220 : isTouch ? 320 : 450;
 				const OCEAN_GRID_Z = isIPhoneX ? 96 : isLowSpecMobile ? 130 : isTouch ? 180 : 252;
-				const BASE_BLOOM_SCALE = isIPhoneX ? 0.58 : isLowSpecMobile ? 0.72 : isTouch ? 0.84 : 0.82;
+				const BASE_BLOOM_SCALE = isIPhoneX ? 0.64 : isLowSpecMobile ? 0.78 : isTouch ? 0.86 : 0.82;
 				const BLOOM_STRENGTH = isIPhoneX ? 1.68 : isLowSpecMobile ? 2.0 : isTouch ? 2.32 : 2.25;
 				const BLOOM_RADIUS = isIPhoneX ? 0.28 : isLowSpecMobile ? 0.36 : isTouch ? 0.46 : 0.5;
 				const BLOOM_THRESHOLD = isIPhoneX ? 0.68 : isLowSpecMobile ? 0.58 : isTouch ? 0.48 : 0.5;
 				const USE_MICRO_LAYER = !isTouch && desktopCores >= 8;
 				const POINT_SIZE_SCALE = isIPhoneX ? 0.84 : isLowSpecMobile ? 0.94 : isTouch ? 1.04 : 1.12;
 				const SHAFT_COUNT = isIPhoneX ? 1 : isLowSpecMobile ? 2 : 3;
-				const CURSOR_RADIUS = isTouch ? 0.4 : 0.38;
-				const CURSOR_STRENGTH = isTouch ? 0.84 : 0.78;
+				const CURSOR_RADIUS = isTouch ? 0.48 : 0.46;
+				const CURSOR_STRENGTH = isTouch ? 1.0 : 0.94;
 				const CURSOR_SMOOTHING = isTouch ? 0.16 : 0.18;
 				const CURSOR_RETURN = isTouch ? 0.018 : 0.025;
+				const CURSOR_RELEASE_FALLOFF = isTouch ? 0.02 : 0.026;
+				const CURSOR_RECENTER_WHEN_IDLE = isTouch ? 0.32 : 0.28;
 				const CURSOR_VEL_DAMP = isTouch ? 0.88 : 0.9;
 				const FXAA_STRENGTH = isTouch ? 1.0 : 1.24;
 				const WOMP_VERTEX_WELD_TOLERANCE = 1e-4;
 				const SHOW_PERF_OVERLAY = false;
+			const VIEWPORT_PROFILES = {
+				default: {
+					fov: 35,
+					cameraBase: [7.14, 1.56, 7.64],
+					cameraTarget: [0.42, 0.36, -0.06],
+					logoScale: 1,
+					logoOffset: [0, 0, 0],
+					pan: {
+						x: 0.46,
+						y: 0.18,
+						zx: 0.18,
+						zy: 0.08,
+						lookX: 0.18,
+						lookY: 0.12,
+						lookZ: 0.08
+					}
+				},
+				mobilePortrait: {
+					fov: 43,
+					cameraBase: [7.76, 1.86, 8.36],
+					cameraTarget: [0.18, 0.42, -0.1],
+					logoScale: 0.78,
+					logoOffset: [-0.12, -0.02, 0.03],
+					pan: {
+						x: 0.24,
+						y: 0.1,
+						zx: 0.1,
+						zy: 0.04,
+						lookX: 0.09,
+						lookY: 0.07,
+						lookZ: 0.04
+					}
+				}
+			};
+
+			function getSceneProfile() {
+				return isMobilePortraitViewport() ? VIEWPORT_PROFILES.mobilePortrait : VIEWPORT_PROFILES.default;
+			}
 			const REQUIRED_POSTPROCESSING_SYMBOLS = [
 				"Pass",
 				"ShaderPass",
@@ -164,6 +238,7 @@
 			let cameraTarget;
 			let obeliskA;
 			let obeliskB;
+			let obeliskC;
 			let logoWrapper;
 			let logoBaseScale = 1;
 			let logoRotationTarget = 0;
@@ -184,8 +259,8 @@
 				particleCount: 0
 			};
 			const logoPose = {
-				px: -0.130,
-				py: 0.120,
+				px: -0.060,
+				py: 0.030,
 				pz: -0.620,
 				rx: -0.612,
 				ry: 6.720,
@@ -205,6 +280,7 @@
 				speed: 0,
 				swirl: 0,
 				influence: 0,
+				release: 0,
 				pressing: false,
 				lastTs: performance.now(),
 				active: false,
@@ -227,6 +303,7 @@
 				uniform float u_pointSize;
 				uniform vec2 u_obeliskA;
 				uniform vec2 u_obeliskB;
+				uniform vec2 u_obeliskC;
 				uniform float u_layer;
 				uniform vec2 u_cursor;
 				uniform vec2 u_cursorVelocity;
@@ -398,8 +475,8 @@
 					vec2 away = screenUv - u_cursor;
 					float cursorDist = length(away);
 					float hoverMask = 1.0 - smoothstep(0.0, u_cursorRadius, cursorDist);
-					float cursorInfluence = clamp(0.24 + u_cursorInfluence * 1.08, 0.0, 1.45);
-					hoverMask = pow(max(hoverMask, 0.0), 1.18) * cursorInfluence;
+					float cursorInfluence = clamp(0.12 + u_cursorInfluence * 1.2, 0.0, 1.55);
+					hoverMask = pow(max(hoverMask, 0.0), 1.08) * cursorInfluence;
 					vec2 repelDir = cursorDist > 0.0001 ? away / cursorDist : vec2(0.0);
 					float cursorVelMag = clamp(length(u_cursorVelocity), 0.0, 1.0);
 					float speedBias = smoothstep(0.06, 0.78, u_pointerSpeed);
@@ -413,12 +490,12 @@
 					float flowDot = dot(repelDir, screenFlowDir);
 					float aheadMask = smoothstep(-0.25, 0.78, flowDot);
 					float behindMask = smoothstep(-0.22, 0.9, -flowDot);
-					float scoopMask = clamp(pow(hoverMask, 0.72) * (0.36 + cursorVelMag * 1.34), 0.0, 1.0);
-					float wakeMask = clamp(pow(hoverMask, 0.68) * speedBias * (0.4 + behindMask * 1.18), 0.0, 1.0);
-					float brushMask = clamp(pow(hoverMask, 0.82) * (0.62 + cursorVelMag * 1.02), 0.0, 1.0);
+					float scoopMask = clamp(pow(hoverMask, 0.66) * (0.46 + cursorVelMag * 1.46), 0.0, 1.0);
+					float wakeMask = clamp(pow(hoverMask, 0.64) * speedBias * (0.46 + behindMask * 1.28), 0.0, 1.0);
+					float brushMask = clamp(pow(hoverMask, 0.74) * (0.72 + cursorVelMag * 1.14), 0.0, 1.0);
 					float repel = u_cursorStrength * pow(hoverMask, 1.0) * (0.44 + breeze * 0.17) * (0.8 - speedBias * 0.2);
-					float scoopPull = u_cursorStrength * scoopMask * aheadMask * (0.16 + cursorVelMag * 0.44);
-					float throwPush = u_cursorStrength * (brushMask * 0.28 + wakeMask * 0.66 + scoopMask * behindMask * 0.46) * (0.46 + cursorVelMag * 1.18);
+					float scoopPull = u_cursorStrength * scoopMask * aheadMask * (0.2 + cursorVelMag * 0.54);
+					float throwPush = u_cursorStrength * (brushMask * 0.32 + wakeMask * 0.72 + scoopMask * behindMask * 0.5) * (0.52 + cursorVelMag * 1.28);
 					vec2 swirlDir = vec2(-repelDir.y, repelDir.x) * sign(u_pointerSwirl + 0.0001);
 
 					p.x += repelDir.x * repel;
@@ -427,24 +504,27 @@
 					p.z -= repelDir.y * scoopPull;
 					p.x += worldFlowDir.x * throwPush;
 					p.z += worldFlowDir.y * throwPush;
-					p.x += u_cursorVelocity.x * hoverMask * u_cursorStrength * (0.082 + whip * 0.22);
-					p.z += -u_cursorVelocity.y * hoverMask * u_cursorStrength * (0.082 + whip * 0.22);
-					p.x += swirlDir.x * hoverMask * (0.01 + swirlBias * 0.036) * (0.42 + speedBias * 0.5);
-					p.z += swirlDir.y * hoverMask * (0.01 + swirlBias * 0.036) * (0.42 + speedBias * 0.5);
-					p.y += hoverMask * u_cursorStrength * (0.038 + breeze * 0.032 + throwPush * 0.26 + behindMask * 0.08);
+					p.x += u_cursorVelocity.x * hoverMask * u_cursorStrength * (0.11 + whip * 0.28);
+					p.z += -u_cursorVelocity.y * hoverMask * u_cursorStrength * (0.11 + whip * 0.28);
+					p.x += swirlDir.x * hoverMask * (0.012 + swirlBias * 0.042) * (0.48 + speedBias * 0.56);
+					p.z += swirlDir.y * hoverMask * (0.012 + swirlBias * 0.042) * (0.48 + speedBias * 0.56);
+					p.y += hoverMask * u_cursorStrength * (0.048 + breeze * 0.038 + throwPush * 0.3 + behindMask * 0.1);
 
 					vec2 fieldA = (p.xz - u_obeliskA) * vec2(1.12, 1.38);
 					vec2 fieldB = (p.xz - u_obeliskB) * vec2(1.12, 1.38);
-					float impactA = 1.0 - smoothstep(0.05, 1.34, length(fieldA));
-					float impactB = 1.0 - smoothstep(0.05, 1.34, length(fieldB));
-					float impactCore = pow(max(impactA, impactB), 1.3);
+					vec2 fieldC = (p.xz - u_obeliskC) * vec2(1.06, 1.32);
+					float impactA = 1.0 - smoothstep(0.05, 1.42, length(fieldA));
+					float impactB = 1.0 - smoothstep(0.05, 1.42, length(fieldB));
+					float impactC = 1.0 - smoothstep(0.05, 1.28, length(fieldC));
+					float impactCore = pow(max(max(impactA, impactB), impactC), 1.22);
 					float rimA = 1.0 - smoothstep(0.08, 0.38, abs(length(fieldA) - 0.32));
 					float rimB = 1.0 - smoothstep(0.08, 0.38, abs(length(fieldB) - 0.32));
-					float rimBurst = max(rimA, rimB);
+					float rimC = 1.0 - smoothstep(0.08, 0.36, abs(length(fieldC) - 0.3));
+					float rimBurst = max(max(rimA, rimB), rimC);
 					float jetPulse = 0.5 + 0.5 * sin(u_breezeTime * 1.05 + streamCoord * 0.62);
-					float collision = clamp(impactCore * (0.5 + streamMask * 0.86) + rimBurst * (0.12 + jetPulse * 0.14), 0.0, 1.0);
-					float spray = clamp(pow(collision, 1.28) * (0.5 + flowPulse * 0.42 + jetPulse * 0.08), 0.0, 0.88);
-					vec2 impactVec = fieldA * impactA + fieldB * impactB;
+					float collision = clamp(impactCore * (0.56 + streamMask * 0.96) + rimBurst * (0.16 + jetPulse * 0.2), 0.0, 1.08);
+					float spray = clamp(pow(collision, 1.2) * (0.58 + flowPulse * 0.52 + jetPulse * 0.12), 0.0, 1.02);
+					vec2 impactVec = fieldA * impactA + fieldB * impactB + fieldC * impactC * 1.18;
 					vec2 obstacleNormal = length(impactVec) > 0.0001 ? normalize(impactVec) : flowDir;
 					vec2 obstacleTangent = vec2(-obstacleNormal.y, obstacleNormal.x);
 					if (dot(obstacleTangent, flowDir) < 0.0) obstacleTangent *= -1.0;
@@ -453,43 +533,43 @@
 					float seamDist = abs(dot(p.xz, vec2(seamAxis.y, -seamAxis.x)));
 					float bridge = 1.0 - smoothstep(0.02, 0.48, seamDist);
 
-					float impact = max(max(impactA, impactB), bridge * 0.42);
+					float impact = max(max(max(impactA, impactB), impactC), bridge * 0.2);
 					impact = pow(impact, 1.45);
 
-					float outwardPush = spray * (0.12 + streamMask * 0.12);
-					float sideSlip = spray * (0.22 + jetPulse * 0.08);
-					float downstreamCarry = spray * (0.08 + streamMask * 0.12);
+					float outwardPush = spray * (0.15 + streamMask * 0.16);
+					float sideSlip = spray * (0.24 + jetPulse * 0.11);
+					float downstreamCarry = spray * (0.1 + streamMask * 0.14);
 					p.x += obstacleNormal.x * outwardPush;
 					p.z += obstacleNormal.y * outwardPush;
 					p.x += obstacleTangent.x * sideSlip;
 					p.z += obstacleTangent.y * sideSlip;
 					p.x += flowDir.x * downstreamCarry;
 					p.z += flowDir.y * downstreamCarry;
-					p.x += crossDir.x * (impactA - impactB) * (streamMask * 0.09 + rimBurst * 0.05);
-					p.z += crossDir.y * (impactA - impactB) * (streamMask * 0.09 + rimBurst * 0.05);
+					p.x += crossDir.x * (impactA - impactB) * (streamMask * 0.1 + rimBurst * 0.06);
+					p.z += crossDir.y * (impactA - impactB) * (streamMask * 0.1 + rimBurst * 0.06);
 
-					float crest = smoothstep(0.04, 0.58, wave + streamMask * 0.4 + breezeMask * 0.24 + impact * 0.5 + high * 0.28 + spray * 0.58 + rimBurst * 0.14 + coreMask * 0.18 + tendrilMask * 0.1);
+					float crest = smoothstep(0.04, 0.56, wave + streamMask * 0.4 + breezeMask * 0.24 + impact * 0.52 + high * 0.28 + spray * 0.72 + rimBurst * 0.2 + coreMask * 0.18 + tendrilMask * 0.1);
 
 					p.y += wave * (0.06 + impact * 0.13);
 					p.y += impact * 0.07;
-					p.y += streamMask * 0.075 + spray * (0.34 + rimBurst * 0.12 + jetPulse * 0.08);
+					p.y += streamMask * 0.09 + spray * (0.46 + rimBurst * 0.18 + jetPulse * 0.12);
 
 						vImpact = impact;
 						vCrest = crest;
 						vSeed = aSeed;
 						vTwinkle = 0.72 + 0.28 * sin(u_time * (0.55 + aSeed * 1.7) + aSeed * 23.0);
-						vHover = hoverMask * (0.8 + cursorVelMag * 0.2);
+						vHover = hoverMask * (0.66 + cursorVelMag * 0.16);
 						vCore = coreMask;
 						vTendril = tendrilMask;
 						vStream = streamMask;
-						vSpray = min(0.92, spray + rimBurst * 0.12);
+						vSpray = min(1.0, spray + rimBurst * 0.16 + impactC * 0.06);
 
 					vec4 mvPosition = modelViewMatrix * vec4(p, 1.0);
 					vDepth = clamp((-mvPosition.z - 0.8) / 11.0, 0.0, 1.0);
 					gl_Position = projectionMatrix * mvPosition;
 
 						float perspective = 32.0 / max(1.0, -mvPosition.z);
-						float baseSize = (u_pointSize * mix(0.6, 1.08, aSeed)) + vCrest * 0.28 + vImpact * 0.2 + vHover * 0.14 + vCore * 0.28 + vSpray * 0.12 - vTendril * 0.08;
+						float baseSize = (u_pointSize * mix(0.6, 1.08, aSeed)) + vCrest * 0.28 + vImpact * 0.2 + vHover * 0.14 + vCore * 0.28 + vSpray * 0.16 - vTendril * 0.08;
 						baseSize *= mix(1.0, 0.84, whip * vCore);
 						if (u_layer > 1.5) {
 							baseSize *= 0.48;
@@ -529,7 +609,7 @@
 						float halo = exp(-dot(uv, uv) * (u_layer > 1.5 ? 12.0 : 10.0));
 						if (u_layer > 1.5 && vSeed < 0.4) discard;
 
-						float highlight = clamp(vCrest * 0.82 + vImpact * 0.66 + vDepth * 0.22 + vHover * 0.32 + vCore * 0.62 + vStream * 0.32 + vSpray * 0.56, 0.0, 1.0);
+						float highlight = clamp(vCrest * 0.82 + vImpact * 0.66 + vDepth * 0.22 + vHover * 0.2 + vCore * 0.62 + vStream * 0.32 + vSpray * 0.64, 0.0, 1.0);
 						vec3 col = mix(u_colorDeep, u_colorBright, highlight);
 						vec3 electricCore = vec3(1.0, 0.72, 0.24);
 						vec3 whiteHot = vec3(1.0, 0.95, 0.78);
@@ -539,22 +619,22 @@
 						if (u_layer > 1.5) {
 							col = mix(col, u_colorBright, 0.62);
 						}
-						col = mix(col, u_colorBright, vHover * (u_layer > 1.5 ? 0.4 : 0.32));
+						col = mix(col, u_colorBright, vHover * (u_layer > 1.5 ? 0.26 : 0.2));
 						col = mix(col, electricCore, vCore * (u_layer > 1.5 ? 0.9 : 0.76));
-						col = mix(col, electricCore, vSpray * 0.68);
-						col = mix(col, whiteHot, clamp(vSpray * 0.14 + vImpact * 0.1, 0.0, 1.0));
+						col = mix(col, electricCore, vSpray * 0.78);
+						col = mix(col, whiteHot, clamp(vSpray * 0.22 + vImpact * 0.14, 0.0, 1.0));
 
-						float sparkle = smoothstep(0.72, 1.0, vCrest) * (0.58 + core * 0.52 + vSpray * 0.12);
+						float sparkle = smoothstep(0.72, 1.0, vCrest) * (0.58 + core * 0.52 + vSpray * 0.2);
 						float alpha = body * (u_layer > 1.5 ? 0.026 : 0.038);
 						alpha += body * (vCrest * 0.14 + vImpact * 0.13);
 						alpha += core * (u_layer > 1.5 ? 0.088 : (u_layer > 0.5 ? 0.094 : 0.102));
 						alpha += halo * (u_layer > 1.5 ? 0.026 : (u_layer > 0.5 ? 0.031 : 0.038));
-						alpha += sparkle * (u_layer > 1.5 ? 0.22 : 0.18);
-						alpha += vHover * (u_layer > 1.5 ? 0.11 : 0.09);
+						alpha += sparkle * (u_layer > 1.5 ? 0.25 : 0.21);
+						alpha += vHover * (u_layer > 1.5 ? 0.08 : 0.065);
 						alpha += vCore * (u_layer > 1.5 ? 0.28 : 0.22);
 						alpha += vTendril * (u_layer > 1.5 ? 0.074 : 0.064);
 						alpha += vStream * (u_layer > 1.5 ? 0.084 : 0.072);
-						alpha += vSpray * (u_layer > 1.5 ? 0.18 : 0.14);
+						alpha += vSpray * (u_layer > 1.5 ? 0.24 : 0.19);
 						alpha *= (0.39 + vDepth * 0.95);
 						alpha *= mix(1.0, 0.74, vTendril * (1.0 - vCore));
 						alpha *= mix(0.88, 1.1, vTwinkle);
@@ -668,7 +748,8 @@
 						u_pointerSwirl: { value: 0 },
 						u_cursorInfluence: { value: 0 },
 						u_obeliskA: { value: obeliskA.clone() },
-						u_obeliskB: { value: obeliskB.clone() }
+						u_obeliskB: { value: obeliskB.clone() },
+						u_obeliskC: { value: obeliskC.clone() }
 					},
 					vertexShader: oceanVertexShader,
 					fragmentShader: oceanFragmentShader
@@ -724,17 +805,19 @@
 			function updateCinematicResolution() {
 				if (!renderer || !cinematicPass || !cinematicPass.material?.uniforms?.u_resolution) return;
 				const pixelRatio = renderer.getPixelRatio();
+				const viewport = getViewportSize();
 				cinematicPass.material.uniforms.u_resolution.value.set(
-					Math.max(1, Math.floor(window.innerWidth * pixelRatio)),
-					Math.max(1, Math.floor(window.innerHeight * pixelRatio))
+					Math.max(1, Math.floor(viewport.width * pixelRatio)),
+					Math.max(1, Math.floor(viewport.height * pixelRatio))
 				);
 			}
 
 			function updateFxaaResolution() {
 				if (!renderer || !fxaaPass || !fxaaPass.material?.uniforms?.resolution) return;
 				const pixelRatio = renderer.getPixelRatio();
-				const invW = 1 / Math.max(1, Math.floor(window.innerWidth * pixelRatio));
-				const invH = 1 / Math.max(1, Math.floor(window.innerHeight * pixelRatio));
+				const viewport = getViewportSize();
+				const invW = 1 / Math.max(1, Math.floor(viewport.width * pixelRatio));
+				const invH = 1 / Math.max(1, Math.floor(viewport.height * pixelRatio));
 				fxaaPass.material.uniforms.resolution.value.set(
 					invW * FXAA_STRENGTH,
 					invH * FXAA_STRENGTH
@@ -743,18 +826,25 @@
 
 			function applyRenderQuality() {
 				if (!renderer) return;
+				const viewport = getViewportSize();
+				const desiredCap = getDesiredPixelRatioCap();
+				if (perfState.qualityTier === "performance") {
+					pixelRatioCap = Math.min(pixelRatioCap, desiredCap);
+				} else {
+					pixelRatioCap = desiredCap;
+				}
 				const renderPixelRatio = Math.min(window.devicePixelRatio, pixelRatioCap);
 				renderer.setPixelRatio(renderPixelRatio);
-				renderer.setSize(window.innerWidth, window.innerHeight);
+				renderer.setSize(viewport.width, viewport.height);
 
 				if (useComposer && composer && bloomPass) {
 					if (typeof composer.setPixelRatio === "function") {
 						composer.setPixelRatio(renderPixelRatio);
 					}
-					composer.setSize(window.innerWidth, window.innerHeight);
+					composer.setSize(viewport.width, viewport.height);
 					bloomPass.setSize(
-						Math.max(1, Math.floor(window.innerWidth * bloomScale)),
-						Math.max(1, Math.floor(window.innerHeight * bloomScale))
+						Math.max(1, Math.floor(viewport.width * bloomScale)),
+						Math.max(1, Math.floor(viewport.height * bloomScale))
 					);
 					updateCinematicResolution();
 					updateFxaaResolution();
@@ -772,8 +862,8 @@
 				let note = "stable";
 
 				if (avgFps < 36) {
-					pixelRatioCap = Math.max(isTouch ? 0.74 : 1.18, pixelRatioCap - 0.14);
-					bloomScale = Math.max(isTouch ? 0.62 : 0.74, bloomScale - 0.08);
+					pixelRatioCap = Math.max(getMinimumPixelRatioCap(), pixelRatioCap - 0.12);
+					bloomScale = Math.max(isTouch ? 0.68 : 0.74, bloomScale - 0.08);
 					perfState.qualityTier = "performance";
 					note = "auto downscale";
 					applyRenderQuality();
@@ -796,15 +886,23 @@
 				const width = worldBounds.max.x - worldBounds.min.x;
 				const leftX = worldBounds.min.x + width * 0.29;
 				const rightX = worldBounds.max.x - width * 0.29;
+				const centerX = (worldBounds.min.x + worldBounds.max.x) * 0.5;
 				obeliskA.set(leftX, midZ + 0.06);
 				obeliskB.set(rightX, midZ - 0.05);
+				obeliskC.set(centerX, midZ + 0.01);
 				syncObeliskUniforms();
 			}
 
 			function applyLogoPose() {
 				if (!logoWrapper) return;
-				logoWrapper.position.set(logoPose.px, logoPose.py, logoPose.pz);
+				const profile = getSceneProfile();
+				logoWrapper.position.set(
+					logoPose.px + profile.logoOffset[0],
+					logoPose.py + profile.logoOffset[1],
+					logoPose.pz + profile.logoOffset[2]
+				);
 				logoWrapper.rotation.set(logoPose.rx, logoPose.ry, logoPose.rz);
+				logoWrapper.scale.setScalar(logoBaseScale * profile.logoScale);
 				logoRotationTarget = logoPose.ry;
 				updateObeliskAnchorsFromLogo();
 			}
@@ -926,6 +1024,7 @@
 				pointerState.lastTs = now;
 				pointerState.active = true;
 				pointerState.pressing = pressing;
+				pointerState.release = 1.0;
 				pointerState.events += 1;
 			}
 
@@ -940,13 +1039,18 @@
 			function onPointerRelease() {
 				pointerState.active = false;
 				pointerState.pressing = false;
+				pointerState.release = Math.max(pointerState.release, 1.0);
 				logoInteraction.targetHover = 0;
 			}
 
 			function updateCursorState() {
-				if (!pointerState.active) {
-					pointerState.targetX += (0.5 - pointerState.targetX) * CURSOR_RETURN;
-					pointerState.targetY += (0.5 - pointerState.targetY) * CURSOR_RETURN;
+				if (pointerState.active) {
+					pointerState.release = 1.0;
+				} else {
+					pointerState.release = Math.max(0.0, pointerState.release - CURSOR_RELEASE_FALLOFF);
+					const recenterStrength = CURSOR_RETURN * (1.0 - pointerState.release) * CURSOR_RECENTER_WHEN_IDLE;
+					pointerState.targetX += (0.5 - pointerState.targetX) * recenterStrength;
+					pointerState.targetY += (0.5 - pointerState.targetY) * recenterStrength;
 				}
 
 				const prevX = pointerState.x;
@@ -965,19 +1069,23 @@
 				const cross = prevSmoothVx * pointerState.smoothVy - prevSmoothVy * pointerState.smoothVx;
 				const swirlInstant = THREE.MathUtils.clamp(cross * 520.0, -1.0, 1.0);
 				pointerState.swirl = THREE.MathUtils.lerp(pointerState.swirl, swirlInstant, 0.24);
-				const targetInfluence = pointerState.active ? (pointerState.pressing ? 1.18 : 0.86) : 0.0;
+				const activeInfluence = pointerState.active ? (pointerState.pressing ? 1.18 : 0.86) : 0.0;
+				const releaseInfluence = pointerState.active ? 0.0 : pointerState.release * 0.68;
+				const targetInfluence = Math.max(activeInfluence, releaseInfluence);
 				pointerState.influence = THREE.MathUtils.lerp(
 					pointerState.influence,
 					targetInfluence,
-					pointerState.active ? 0.2 : 0.08
+					pointerState.active ? 0.2 : 0.06
 				);
 
 				pointerState.vx *= CURSOR_VEL_DAMP;
 				pointerState.vy *= CURSOR_VEL_DAMP;
 
 				if (!pointerState.active) {
-					pointerState.speed *= 0.94;
-					pointerState.swirl *= 0.9;
+					const releaseSpeedDamp = THREE.MathUtils.lerp(0.94, 0.982, pointerState.release);
+					const releaseSwirlDamp = THREE.MathUtils.lerp(0.9, 0.974, pointerState.release);
+					pointerState.speed *= releaseSpeedDamp;
+					pointerState.swirl *= releaseSwirlDamp;
 				}
 			}
 
@@ -1055,12 +1163,17 @@
 
 			function updateLogoInteraction(t) {
 				if (!logoWrapper) return;
+				const profile = getSceneProfile();
 
 				logoInteraction.hover = 0;
 				logoInteraction.targetHover = 0;
-				logoWrapper.position.set(logoPose.px, logoPose.py, logoPose.pz);
+				logoWrapper.position.set(
+					logoPose.px + profile.logoOffset[0],
+					logoPose.py + profile.logoOffset[1],
+					logoPose.pz + profile.logoOffset[2]
+				);
 				logoWrapper.rotation.set(logoPose.rx, logoPose.ry, logoPose.rz);
-				logoWrapper.scale.setScalar(logoBaseScale);
+				logoWrapper.scale.setScalar(logoBaseScale * profile.logoScale);
 
 				logoMaterials.forEach((material) => {
 					material.roughness = 0.38;
@@ -1125,12 +1238,14 @@
 			}
 
 			function initStaticVectors() {
+				const profile = getSceneProfile();
 				clock = new THREE.Clock();
 					raycaster = new THREE.Raycaster();
-					cameraBase = new THREE.Vector3(7.14, 1.56, 7.64);
-					cameraTarget = new THREE.Vector3(0.42, 0.36, -0.06);
+					cameraBase = new THREE.Vector3(...profile.cameraBase);
+					cameraTarget = new THREE.Vector3(...profile.cameraTarget);
 				obeliskA = new THREE.Vector2(-0.56, 0.12);
 				obeliskB = new THREE.Vector2(0.38, -0.08);
+				obeliskC = new THREE.Vector2(-0.09, 0.01);
 			}
 
 			function initRenderer() {
@@ -1149,13 +1264,27 @@
 			}
 
 			function initScene() {
+				const viewport = getViewportSize();
+				const profile = getSceneProfile();
 				scene = new THREE.Scene();
 				scene.background = new THREE.Color(0x170602);
 				scene.fog = new THREE.FogExp2(0x341304, 0.021);
 
-				camera = new THREE.PerspectiveCamera(35, window.innerWidth / window.innerHeight, 0.1, 80);
+				camera = new THREE.PerspectiveCamera(profile.fov, viewport.width / viewport.height, 0.1, 80);
 				camera.position.copy(cameraBase);
 				camera.lookAt(cameraTarget);
+			}
+
+			function syncResponsiveSceneProfile() {
+				if (!camera || !cameraBase || !cameraTarget) return;
+				const viewport = getViewportSize();
+				const profile = getSceneProfile();
+				camera.aspect = viewport.width / viewport.height;
+				camera.fov = profile.fov;
+				cameraBase.set(...profile.cameraBase);
+				cameraTarget.set(...profile.cameraTarget);
+				camera.updateProjectionMatrix();
+				applyLogoPose();
 			}
 
 			function addLighting() {
@@ -1211,14 +1340,17 @@
 					if (coreMaterial && coreMaterial.uniforms) {
 						coreMaterial.uniforms.u_obeliskA.value.copy(obeliskA);
 						coreMaterial.uniforms.u_obeliskB.value.copy(obeliskB);
+						coreMaterial.uniforms.u_obeliskC.value.copy(obeliskC);
 					}
 					if (hazeMaterial && hazeMaterial.uniforms) {
 						hazeMaterial.uniforms.u_obeliskA.value.copy(obeliskA);
 						hazeMaterial.uniforms.u_obeliskB.value.copy(obeliskB);
+						hazeMaterial.uniforms.u_obeliskC.value.copy(obeliskC);
 					}
 					if (microMaterial && microMaterial.uniforms) {
 						microMaterial.uniforms.u_obeliskA.value.copy(obeliskA);
 						microMaterial.uniforms.u_obeliskB.value.copy(obeliskB);
+						microMaterial.uniforms.u_obeliskC.value.copy(obeliskC);
 					}
 				}
 
@@ -1437,11 +1569,12 @@
 				}
 
 				try {
+					const viewport = getViewportSize();
 					let composerTarget = null;
 					if (!isLowSpecMobile && renderer.capabilities?.isWebGL2 && THREE.WebGLMultisampleRenderTarget) {
 						composerTarget = new THREE.WebGLMultisampleRenderTarget(
-							window.innerWidth,
-							window.innerHeight,
+							viewport.width,
+							viewport.height,
 							{
 								format: THREE.RGBAFormat,
 								type: THREE.UnsignedByteType
@@ -1460,7 +1593,7 @@
 					composer.addPass(new THREE.RenderPass(scene, camera));
 
 					bloomPass = new THREE.UnrealBloomPass(
-						new THREE.Vector2(window.innerWidth, window.innerHeight),
+						new THREE.Vector2(viewport.width, viewport.height),
 						BLOOM_STRENGTH,
 						BLOOM_RADIUS,
 						BLOOM_THRESHOLD
@@ -1488,8 +1621,7 @@
 			}
 
 			function resize() {
-				camera.aspect = window.innerWidth / window.innerHeight;
-				camera.updateProjectionMatrix();
+				syncResponsiveSceneProfile();
 				applyRenderQuality();
 			}
 
@@ -1546,16 +1678,17 @@
 				const cameraBreathX = Math.sin(t * 0.05) * 0.07;
 				const cameraBreathY = Math.cos(t * 0.045) * 0.04;
 				const cameraBreathZ = Math.cos(t * 0.055) * 0.06;
+				const panProfile = getSceneProfile().pan;
 
 				camera.position.set(
-					cameraBase.x + cameraBreathX + cursorPanX * 0.46,
-					cameraBase.y + cameraBreathY + cursorPanY * 0.18,
-					cameraBase.z + cameraBreathZ - cursorPanX * 0.18 - cursorPanY * 0.08
+					cameraBase.x + cameraBreathX + cursorPanX * panProfile.x,
+					cameraBase.y + cameraBreathY + cursorPanY * panProfile.y,
+					cameraBase.z + cameraBreathZ - cursorPanX * panProfile.zx - cursorPanY * panProfile.zy
 				);
 				camera.lookAt(
-					cameraTarget.x + cursorPanX * 0.18,
-					cameraTarget.y + cursorPanY * 0.12,
-					cameraTarget.z - cursorPanY * 0.08
+					cameraTarget.x + cursorPanX * panProfile.lookX,
+					cameraTarget.y + cursorPanY * panProfile.lookY,
+					cameraTarget.z - cursorPanY * panProfile.lookZ
 				);
 
 				if (logoWrapper) {
@@ -1599,6 +1732,8 @@
 				window.addEventListener("pointercancel", onPointerRelease, { passive: true });
 				canvas.addEventListener("pointerleave", onPointerRelease, { passive: true });
 				window.addEventListener("resize", resize);
+				window.addEventListener("orientationchange", resize);
+				window.visualViewport?.addEventListener("resize", resize, { passive: true });
 				animate();
 			}
 
