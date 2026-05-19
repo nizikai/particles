@@ -16,23 +16,26 @@
 			width: 100%;
 			height: 100%;
 			overflow: hidden;
-			background: #170602;
+			background: linear-gradient(180deg, #000000 0%, #070100 38%, #170602 100%);
 		}
 
 		#webgl {
 			position: fixed;
-			inset: 0;
+			left: 0;
+			right: 0;
+			top: 1.5dvh;
+			bottom: 0;
 			width: 100vw;
-			height: 100dvh;
+			height: 98.5dvh;
 			display: block;
 			touch-action: none;
 		}
 
-		@media (pointer: coarse) and (orientation: portrait) and (max-width: 720px) {
+		@media (orientation: portrait) and (max-width: 720px) {
 			#webgl {
-				top: 46dvh;
+				top: 25dvh;
 				bottom: 0;
-				height: 54dvh;
+				height: 75dvh;
 			}
 		}
 
@@ -124,7 +127,8 @@
 			const isIPhoneX = /iPhone/.test(ua) && shortSide === 375 && longSide === 812 && window.devicePixelRatio >= 2.8;
 			const isLowSpecMobile = isTouch && (isIOS || isAndroid);
 			const desktopCores = navigator.hardwareConcurrency || 8;
-			const MOBILE_SCENE_TOP_RATIO = 0.46;
+			const DESKTOP_SCENE_TOP_RATIO = 0.015;
+			const MOBILE_SCENE_TOP_RATIO = 0.25;
 
 			function getViewportSize() {
 				const visualViewport = window.visualViewport;
@@ -141,18 +145,20 @@
 
 			function isMobilePortraitViewport() {
 				const viewport = getViewportSize();
-				return isTouch && viewport.height > viewport.width && viewport.width <= 720;
+				return viewport.height > viewport.width && viewport.width <= 720;
 			}
 
 			function getRenderSize() {
 				const viewport = getViewportSize();
-				if (!isMobilePortraitViewport()) {
-					return viewport;
-				}
+				const topRatio = getSceneTopRatio();
 				return {
 					width: viewport.width,
-					height: Math.max(1, Math.round(viewport.height * (1 - MOBILE_SCENE_TOP_RATIO)))
+					height: Math.max(1, Math.round(viewport.height * (1 - topRatio)))
 				};
+			}
+
+			function getSceneTopRatio() {
+				return isMobilePortraitViewport() ? MOBILE_SCENE_TOP_RATIO : DESKTOP_SCENE_TOP_RATIO;
 			}
 
 			function getDesiredPixelRatioCap() {
@@ -674,7 +680,8 @@
 					u_exposure: { value: 1.04 },
 					u_saturation: { value: 1.16 },
 					u_sharpness: { value: isTouch ? 0.2 : 0.24 },
-					u_blurStrength: { value: isTouch ? 0.42 : 0.56 }
+					u_blurStrength: { value: isTouch ? 0.42 : 0.56 },
+					u_sceneTopRatio: { value: 0 }
 				},
 				vertexShader: `
 					varying vec2 vUv;
@@ -694,6 +701,7 @@
 					uniform float u_saturation;
 					uniform float u_sharpness;
 					uniform float u_blurStrength;
+					uniform float u_sceneTopRatio;
 
 					varying vec2 vUv;
 
@@ -709,8 +717,22 @@
 						return c;
 					}
 
+					float gradientNoise(vec2 p) {
+						return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715))));
+					}
+
 					void main() {
+						vec3 sceneBaseColor = vec3(0.0902, 0.0235, 0.0078);
+						float pageY = clamp(u_sceneTopRatio + (1.0 - u_sceneTopRatio) * (1.0 - vUv.y), 0.0, 1.0);
+						vec3 pageBackground = mix(vec3(0.0), sceneBaseColor, smoothstep(0.0, 1.0, pageY));
+						pageBackground = clamp(pageBackground + (gradientNoise(gl_FragCoord.xy) - 0.5) * 0.006, 0.0, 1.0);
 						vec3 base = texture2D(tDiffuse, vUv).rgb;
+						float baseLuma = dot(base, vec3(0.2126, 0.7152, 0.0722));
+						float skyBand = smoothstep(0.32, 0.72, vUv.y);
+						float darkSky = 1.0 - smoothstep(0.045, 0.18, baseLuma);
+						float brightDetail = smoothstep(0.16, 0.34, max(max(base.r, base.g), base.b));
+						float backgroundMask = clamp(skyBand * darkSky * (1.0 - brightDetail), 0.0, 1.0);
+						base = mix(base, pageBackground, backgroundMask);
 						float distToFocus = distance(vUv, u_focus);
 						float focusMask = 1.0 - smoothstep(0.16, 0.37, distToFocus);
 						float foregroundMask = smoothstep(0.52, 0.95, 1.0 - vUv.y);
@@ -742,6 +764,7 @@
 						float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
 						color = mix(vec3(luma), color, u_saturation);
 						color *= 1.0 - smoothstep(0.64, 1.22, distance(vUv, vec2(0.5))) * 0.22;
+						color = mix(color, pageBackground, backgroundMask * 0.92);
 
 						gl_FragColor = vec4(color, 1.0);
 					}
@@ -831,6 +854,9 @@
 					Math.max(1, Math.floor(renderSize.width * pixelRatio)),
 					Math.max(1, Math.floor(renderSize.height * pixelRatio))
 				);
+				if (cinematicPass.material.uniforms.u_sceneTopRatio) {
+					cinematicPass.material.uniforms.u_sceneTopRatio.value = getSceneTopRatio();
+				}
 			}
 
 			function updateFxaaResolution() {
