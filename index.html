@@ -16,7 +16,7 @@
 			width: 100%;
 			height: 100%;
 			overflow: hidden;
-			background: #000000;
+			background: #170602;
 		}
 
 		#webgl {
@@ -26,6 +26,14 @@
 			height: 100dvh;
 			display: block;
 			touch-action: none;
+		}
+
+		@media (pointer: coarse) and (orientation: portrait) and (max-width: 720px) {
+			#webgl {
+				top: 46dvh;
+				bottom: 0;
+				height: 54dvh;
+			}
 		}
 
 		.support {
@@ -116,6 +124,7 @@
 			const isIPhoneX = /iPhone/.test(ua) && shortSide === 375 && longSide === 812 && window.devicePixelRatio >= 2.8;
 			const isLowSpecMobile = isTouch && (isIOS || isAndroid);
 			const desktopCores = navigator.hardwareConcurrency || 8;
+			const MOBILE_SCENE_TOP_RATIO = 0.46;
 
 			function getViewportSize() {
 				const visualViewport = window.visualViewport;
@@ -133,6 +142,17 @@
 			function isMobilePortraitViewport() {
 				const viewport = getViewportSize();
 				return isTouch && viewport.height > viewport.width && viewport.width <= 720;
+			}
+
+			function getRenderSize() {
+				const viewport = getViewportSize();
+				if (!isMobilePortraitViewport()) {
+					return viewport;
+				}
+				return {
+					width: viewport.width,
+					height: Math.max(1, Math.round(viewport.height * (1 - MOBILE_SCENE_TOP_RATIO)))
+				};
 			}
 
 			function getDesiredPixelRatioCap() {
@@ -159,6 +179,7 @@
 				const USE_MICRO_LAYER = !isTouch && desktopCores >= 8;
 				const POINT_SIZE_SCALE = isIPhoneX ? 0.84 : isLowSpecMobile ? 0.94 : isTouch ? 1.04 : 1.12;
 				const SHAFT_COUNT = isIPhoneX ? 1 : isLowSpecMobile ? 2 : 3;
+				const ENABLE_ATMOSPHERIC_SHAFTS = false;
 				const CURSOR_RADIUS = isTouch ? 0.48 : 0.46;
 				const CURSOR_STRENGTH = isTouch ? 1.0 : 0.94;
 				const CURSOR_SMOOTHING = isTouch ? 0.16 : 0.18;
@@ -187,19 +208,19 @@
 					}
 				},
 				mobilePortrait: {
-					fov: 43,
-					cameraBase: [7.76, 1.86, 8.36],
-					cameraTarget: [0.18, 0.42, -0.1],
-					logoScale: 0.78,
-					logoOffset: [-0.12, -0.02, 0.03],
+					fov: 46,
+					cameraBase: [8.35, 2.0, 9.1],
+					cameraTarget: [0.12, 0.36, -0.12],
+					logoScale: 0.68,
+					logoOffset: [-0.16, -0.04, 0.04],
 					pan: {
-						x: 0.24,
-						y: 0.1,
-						zx: 0.1,
-						zy: 0.04,
-						lookX: 0.09,
-						lookY: 0.07,
-						lookZ: 0.04
+						x: 0.16,
+						y: 0.06,
+						zx: 0.07,
+						zy: 0.03,
+						lookX: 0.06,
+						lookY: 0.04,
+						lookZ: 0.03
 					}
 				}
 			};
@@ -805,19 +826,19 @@
 			function updateCinematicResolution() {
 				if (!renderer || !cinematicPass || !cinematicPass.material?.uniforms?.u_resolution) return;
 				const pixelRatio = renderer.getPixelRatio();
-				const viewport = getViewportSize();
+				const renderSize = getRenderSize();
 				cinematicPass.material.uniforms.u_resolution.value.set(
-					Math.max(1, Math.floor(viewport.width * pixelRatio)),
-					Math.max(1, Math.floor(viewport.height * pixelRatio))
+					Math.max(1, Math.floor(renderSize.width * pixelRatio)),
+					Math.max(1, Math.floor(renderSize.height * pixelRatio))
 				);
 			}
 
 			function updateFxaaResolution() {
 				if (!renderer || !fxaaPass || !fxaaPass.material?.uniforms?.resolution) return;
 				const pixelRatio = renderer.getPixelRatio();
-				const viewport = getViewportSize();
-				const invW = 1 / Math.max(1, Math.floor(viewport.width * pixelRatio));
-				const invH = 1 / Math.max(1, Math.floor(viewport.height * pixelRatio));
+				const renderSize = getRenderSize();
+				const invW = 1 / Math.max(1, Math.floor(renderSize.width * pixelRatio));
+				const invH = 1 / Math.max(1, Math.floor(renderSize.height * pixelRatio));
 				fxaaPass.material.uniforms.resolution.value.set(
 					invW * FXAA_STRENGTH,
 					invH * FXAA_STRENGTH
@@ -826,7 +847,7 @@
 
 			function applyRenderQuality() {
 				if (!renderer) return;
-				const viewport = getViewportSize();
+				const renderSize = getRenderSize();
 				const desiredCap = getDesiredPixelRatioCap();
 				if (perfState.qualityTier === "performance") {
 					pixelRatioCap = Math.min(pixelRatioCap, desiredCap);
@@ -835,16 +856,16 @@
 				}
 				const renderPixelRatio = Math.min(window.devicePixelRatio, pixelRatioCap);
 				renderer.setPixelRatio(renderPixelRatio);
-				renderer.setSize(viewport.width, viewport.height);
+				renderer.setSize(renderSize.width, renderSize.height, false);
 
 				if (useComposer && composer && bloomPass) {
 					if (typeof composer.setPixelRatio === "function") {
 						composer.setPixelRatio(renderPixelRatio);
 					}
-					composer.setSize(viewport.width, viewport.height);
+					composer.setSize(renderSize.width, renderSize.height);
 					bloomPass.setSize(
-						Math.max(1, Math.floor(viewport.width * bloomScale)),
-						Math.max(1, Math.floor(viewport.height * bloomScale))
+						Math.max(1, Math.floor(renderSize.width * bloomScale)),
+						Math.max(1, Math.floor(renderSize.height * bloomScale))
 					);
 					updateCinematicResolution();
 					updateFxaaResolution();
@@ -1264,22 +1285,22 @@
 			}
 
 			function initScene() {
-				const viewport = getViewportSize();
+				const renderSize = getRenderSize();
 				const profile = getSceneProfile();
 				scene = new THREE.Scene();
 				scene.background = new THREE.Color(0x170602);
 				scene.fog = new THREE.FogExp2(0x341304, 0.021);
 
-				camera = new THREE.PerspectiveCamera(profile.fov, viewport.width / viewport.height, 0.1, 80);
+				camera = new THREE.PerspectiveCamera(profile.fov, renderSize.width / renderSize.height, 0.1, 80);
 				camera.position.copy(cameraBase);
 				camera.lookAt(cameraTarget);
 			}
 
 			function syncResponsiveSceneProfile() {
 				if (!camera || !cameraBase || !cameraTarget) return;
-				const viewport = getViewportSize();
+				const renderSize = getRenderSize();
 				const profile = getSceneProfile();
-				camera.aspect = viewport.width / viewport.height;
+				camera.aspect = renderSize.width / renderSize.height;
 				camera.fov = profile.fov;
 				cameraBase.set(...profile.cameraBase);
 				cameraTarget.set(...profile.cameraTarget);
@@ -1523,6 +1544,8 @@
 				}
 
 			function addAtmosphericShafts() {
+				if (!ENABLE_ATMOSPHERIC_SHAFTS) return;
+
 				const shaftTex = createShaftTexture(64, 1024);
 				shaftGroup = new THREE.Group();
 
@@ -1569,12 +1592,12 @@
 				}
 
 				try {
-					const viewport = getViewportSize();
+					const renderSize = getRenderSize();
 					let composerTarget = null;
 					if (!isLowSpecMobile && renderer.capabilities?.isWebGL2 && THREE.WebGLMultisampleRenderTarget) {
 						composerTarget = new THREE.WebGLMultisampleRenderTarget(
-							viewport.width,
-							viewport.height,
+							renderSize.width,
+							renderSize.height,
 							{
 								format: THREE.RGBAFormat,
 								type: THREE.UnsignedByteType
@@ -1593,7 +1616,7 @@
 					composer.addPass(new THREE.RenderPass(scene, camera));
 
 					bloomPass = new THREE.UnrealBloomPass(
-						new THREE.Vector2(viewport.width, viewport.height),
+						new THREE.Vector2(renderSize.width, renderSize.height),
 						BLOOM_STRENGTH,
 						BLOOM_RADIUS,
 						BLOOM_THRESHOLD
