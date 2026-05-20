@@ -264,32 +264,28 @@
 					fov: 35,
 					cameraBase: [7.14, 1.56, 7.64],
 					cameraTarget: [0.42, 0.36, -0.06],
+					focusOffset: [0, 0.16, 0],
 					logoScale: 1,
 					logoOffset: [0, 0, 0],
 					pan: {
-						x: 0.46,
-						y: 0.18,
-						zx: 0.18,
-						zy: 0.08,
-						lookX: 0.18,
-						lookY: 0.12,
-						lookZ: 0.08
+						x: 0.934,
+						y: 0.36,
+						zx: 0.366,
+						zy: 0.16
 					}
 				},
 				mobilePortrait: {
 					fov: 46,
 					cameraBase: [8.35, 2.0, 9.1],
 					cameraTarget: [0.12, 0.36, -0.12],
+					focusOffset: [0, 0.08, 0],
 					logoScale: 0.68,
 					logoOffset: [-0.16, -0.04, 0.04],
 					pan: {
-						x: 0.16,
-						y: 0.06,
-						zx: 0.07,
-						zy: 0.03,
-						lookX: 0.06,
-						lookY: 0.04,
-						lookZ: 0.03
+						x: 0.324,
+						y: 0.12,
+						zx: 0.142,
+						zy: 0.06
 					}
 				}
 			};
@@ -992,11 +988,19 @@
 			function updateObeliskAnchorsFromLogo() {
 				if (!logoWrapper) return;
 				const worldBounds = new THREE.Box3().setFromObject(logoWrapper);
+				const profile = getSceneProfile();
+				const focusCenter = new THREE.Vector3();
+				worldBounds.getCenter(focusCenter);
 				const midZ = (worldBounds.min.z + worldBounds.max.z) * 0.5;
 				const width = worldBounds.max.x - worldBounds.min.x;
 				const leftX = worldBounds.min.x + width * 0.29;
 				const rightX = worldBounds.max.x - width * 0.29;
 				const centerX = (worldBounds.min.x + worldBounds.max.x) * 0.5;
+				cameraTarget.set(
+					focusCenter.x + profile.focusOffset[0],
+					focusCenter.y + profile.focusOffset[1],
+					focusCenter.z + profile.focusOffset[2]
+				);
 				obeliskA.set(leftX, midZ + 0.06);
 				obeliskB.set(rightX, midZ - 0.05);
 				obeliskC.set(centerX, midZ + 0.01);
@@ -1797,11 +1801,7 @@
 					cameraBase.y + cameraBreathY + cursorPanY * panProfile.y,
 					cameraBase.z + cameraBreathZ - cursorPanX * panProfile.zx - cursorPanY * panProfile.zy
 				);
-				camera.lookAt(
-					cameraTarget.x + cursorPanX * panProfile.lookX,
-					cameraTarget.y + cursorPanY * panProfile.lookY,
-					cameraTarget.z - cursorPanY * panProfile.lookZ
-				);
+				camera.lookAt(cameraTarget);
 
 				if (logoWrapper) {
 					updateLogoInteraction(t);
