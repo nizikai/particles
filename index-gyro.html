@@ -152,34 +152,7 @@
 				display: none;
 			}
 
-			.motion-permission {
-				position: fixed;
-				z-index: 20;
-				left: 22px;
-				bottom: calc(75dvh + 16px);
-				min-height: 42px;
-				padding: 0 16px;
-				border: 1px solid rgb(213 130 42 / 0.48);
-				border-radius: 999px;
-				background: rgb(9 4 2 / 0.74);
-				color: #f7ead1;
-				font: 700 12px/1 "Avenir Next", "Trebuchet MS", sans-serif;
-				letter-spacing: 0.12em;
-				text-transform: uppercase;
-				box-shadow: 0 0 24px rgb(255 145 38 / 0.14);
-				backdrop-filter: blur(14px);
-				-webkit-backdrop-filter: blur(14px);
-				touch-action: manipulation;
-			}
-
-			.motion-permission.hidden {
-				display: none;
-			}
-
-			.motion-permission:disabled {
-				opacity: 0.58;
-			}
-		</style>
+			</style>
 	</head>
 	<body>
 	<canvas id="webgl" aria-label="Golden particle ocean scene"></canvas>
@@ -191,9 +164,7 @@
 		<div id="support" class="support hidden"></div>
 		<div id="perf" class="perf"></div>
 		<div id="tuner" class="tuner hidden"></div>
-		<button id="motion-permission" class="motion-permission hidden" type="button">Enable motion</button>
-
-		<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+			<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 	<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 	<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/Pass.js"></script>
 	<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
@@ -210,7 +181,6 @@
 			const support = document.getElementById("support");
 			const perf = document.getElementById("perf");
 			const tuner = document.getElementById("tuner");
-			const motionPermission = document.getElementById("motion-permission");
 			const isTouch = window.matchMedia("(pointer: coarse)").matches;
 			const ua = navigator.userAgent || "";
 			const isIOS = /iPad|iPhone|iPod/.test(ua);
@@ -287,8 +257,8 @@
 				const CURSOR_RELEASE_FALLOFF = isTouch ? 0.02 : 0.026;
 				const CURSOR_RECENTER_WHEN_IDLE = isTouch ? 0.32 : 0.28;
 				const CURSOR_VEL_DAMP = isTouch ? 0.88 : 0.9;
-				const GYRO_TILT_RANGE = isIPhoneX ? 16 : 18;
-				const GYRO_SMOOTHING = 0.085;
+				const GYRO_TILT_RANGE = isIPhoneX ? 9 : 10.5;
+				const GYRO_SMOOTHING = 0.12;
 				const FXAA_STRENGTH = isTouch ? 1.0 : 1.24;
 				const WOMP_VERTEX_WELD_TOLERANCE = 1e-4;
 				const SHOW_PERF_OVERLAY = false;
@@ -407,10 +377,11 @@
 			};
 			const gyroState = {
 				listening: false,
-				enabled: false,
-				permissionRequested: false,
-				permissionDenied: false,
-				hasReading: false,
+					enabled: false,
+					permissionRequested: false,
+					permissionDenied: false,
+					permissionPromptArmed: false,
+					hasReading: false,
 				baseBeta: null,
 				baseGamma: null,
 				targetX: 0,
@@ -1175,16 +1146,8 @@
 				return canUseGyroCamera() && typeof window.DeviceOrientationEvent?.requestPermission === "function";
 			}
 
-			function updateMotionPermissionUI() {
-				if (!motionPermission) return;
-				const shouldShow = requiresGyroPermission() && !gyroState.listening && !gyroState.permissionDenied;
-				motionPermission.classList.toggle("hidden", !shouldShow);
-				motionPermission.disabled = false;
-				motionPermission.textContent = "Enable motion";
-			}
-
-			function resetGyroBaseline() {
-				gyroState.baseBeta = null;
+				function resetGyroBaseline() {
+					gyroState.baseBeta = null;
 				gyroState.baseGamma = null;
 				gyroState.targetX = 0;
 				gyroState.targetY = 0;
@@ -1212,17 +1175,16 @@
 			function enableGyroCamera() {
 				if (!canUseGyroCamera() || gyroState.listening) return false;
 				resetGyroBaseline();
-				window.addEventListener("deviceorientation", onDeviceOrientation, { passive: true });
-				gyroState.listening = true;
-				gyroState.permissionDenied = false;
-				updateMotionPermissionUI();
-				return true;
-			}
-
-			async function requestGyroCameraAccess() {
-				if (!canUseGyroCamera() || gyroState.listening || gyroState.permissionDenied) {
-					return gyroState.listening;
+					window.addEventListener("deviceorientation", onDeviceOrientation, { passive: true });
+					gyroState.listening = true;
+					gyroState.permissionDenied = false;
+					return true;
 				}
+
+				async function requestGyroCameraAccess() {
+					if (!canUseGyroCamera() || gyroState.listening || gyroState.permissionDenied || gyroState.permissionRequested) {
+						return gyroState.listening;
+					}
 
 				const orientationEvent = window.DeviceOrientationEvent;
 				if (typeof orientationEvent?.requestPermission !== "function") {
@@ -1240,34 +1202,42 @@
 						return enableGyroCamera();
 					}
 					gyroState.permissionDenied = true;
-				} catch (error) {
-					gyroState.permissionDenied = true;
-					console.warn("Device orientation permission was not granted.", error);
+					} catch (error) {
+						gyroState.permissionRequested = false;
+						console.warn("Device orientation permission was not granted.", error);
+						armGyroPermissionGesture();
+					}
+					return false;
 				}
-				updateMotionPermissionUI();
-				return false;
-			}
 
-			async function onMotionPermissionClick() {
-				if (!motionPermission) return;
-				motionPermission.disabled = true;
-				motionPermission.textContent = "Enabling";
-				const granted = await requestGyroCameraAccess();
-				if (!granted) {
-					motionPermission.textContent = "Motion unavailable";
-					window.setTimeout(updateMotionPermissionUI, 1200);
-					return;
+				function cleanupGyroPermissionGesture() {
+					window.removeEventListener("touchend", onGyroPermissionGesture, true);
+					window.removeEventListener("click", onGyroPermissionGesture, true);
+					gyroState.permissionPromptArmed = false;
 				}
-				updateMotionPermissionUI();
-			}
 
-			function setupGyroCameraAccess() {
-				if (!canUseGyroCamera()) return;
-				if (requiresGyroPermission()) {
-					updateMotionPermissionUI();
-					return;
+				function onGyroPermissionGesture() {
+					if (!gyroState.permissionPromptArmed) return;
+					cleanupGyroPermissionGesture();
+					void requestGyroCameraAccess();
 				}
-				enableGyroCamera();
+
+				function armGyroPermissionGesture() {
+					if (!requiresGyroPermission() || gyroState.listening || gyroState.permissionDenied || gyroState.permissionPromptArmed) {
+						return;
+					}
+					gyroState.permissionPromptArmed = true;
+					window.addEventListener("touchend", onGyroPermissionGesture, { passive: true, capture: true });
+					window.addEventListener("click", onGyroPermissionGesture, { capture: true });
+				}
+
+				function setupGyroCameraAccess() {
+					if (!canUseGyroCamera()) return;
+					if (requiresGyroPermission()) {
+						armGyroPermissionGesture();
+						return;
+					}
+					enableGyroCamera();
 			}
 
 			function updateGyroCameraInput() {
@@ -2014,12 +1984,11 @@
 				addParticleOcean();
 				syncObeliskUniforms();
 				addAtmosphericShafts();
-				initComposer();
-				setPerfOverlayVisibility();
-				setupGyroCameraAccess();
-				window.addEventListener("keydown", onPoseKeydown);
-				motionPermission?.addEventListener("click", onMotionPermissionClick);
-				window.addEventListener("pointermove", onPointerMove, { passive: true });
+					initComposer();
+					setPerfOverlayVisibility();
+					setupGyroCameraAccess();
+					window.addEventListener("keydown", onPoseKeydown);
+					window.addEventListener("pointermove", onPointerMove, { passive: true });
 				window.addEventListener("pointerdown", onPointerDown, { passive: true });
 				window.addEventListener("pointerup", onPointerRelease, { passive: true });
 				window.addEventListener("pointercancel", onPointerRelease, { passive: true });
