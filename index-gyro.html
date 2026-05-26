@@ -1560,9 +1560,10 @@
 				logoWrapper.scale.setScalar(logoBaseScale * profile.logoScale);
 
 				logoMaterials.forEach((material) => {
-					material.roughness = 0.28; // Smoother (was 0.38)
-					material.clearcoat = 0.92; // Stronger (was 0.78)
-					material.emissiveIntensity = 0.12; // Brighter (was 0.035)
+					// Mobile gets brighter settings
+					material.roughness = isMobileDevice ? 0.28 : 0.38;
+					material.clearcoat = isMobileDevice ? 0.92 : 0.78;
+					material.emissiveIntensity = isMobileDevice ? 0.12 : 0.035;
 				});
 			}
 
@@ -1674,28 +1675,36 @@
 			}
 
 			function addLighting() {
-				const downKey = new THREE.DirectionalLight(0xffcc8a, 1.2); // Increased from 0.76
+				// Mobile gets brighter lighting, desktop stays original
+				const keyIntensity = isMobileDevice ? 1.2 : 0.76;
+				const rimIntensity = isMobileDevice ? 3.2 : 2.32;
+				const rearIntensity = isMobileDevice ? 1.5 : 0.96;
+				const fillIntensity = isMobileDevice ? 0.6 : 0.3;
+				const skyIntensity = isMobileDevice ? 0.28 : 0.17;
+				const ambientIntensity = isMobileDevice ? 0.12 : 0.052;
+				
+				const downKey = new THREE.DirectionalLight(0xffcc8a, keyIntensity);
 				downKey.position.set(-0.8, 9.5, -1.2);
 				downKey.target.position.set(0, 0, 0);
 				scene.add(downKey);
 				scene.add(downKey.target);
 
-				const rim = new THREE.DirectionalLight(0xff8a1f, 3.2); // Increased from 2.32
+				const rim = new THREE.DirectionalLight(0xff8a1f, rimIntensity);
 				rim.position.set(-5.0, 2.8, -3.9);
 				scene.add(rim);
 
-				const rearWarm = new THREE.DirectionalLight(0xff6a14, 1.5); // Increased from 0.96
+				const rearWarm = new THREE.DirectionalLight(0xff6a14, rearIntensity);
 				rearWarm.position.set(4.4, 1.9, -4.8);
 				scene.add(rearWarm);
 
-				const frontFill = new THREE.DirectionalLight(0xa34e1a, 0.6); // Increased from 0.3
+				const frontFill = new THREE.DirectionalLight(0xa34e1a, fillIntensity);
 				frontFill.position.set(3.3, 1.35, 2.8);
 				scene.add(frontFill);
 
-				const sky = new THREE.HemisphereLight(0xffa74f, 0x160602, 0.28); // Increased from 0.17
+				const sky = new THREE.HemisphereLight(0xffa74f, 0x160602, skyIntensity);
 				scene.add(sky);
 
-				const warmAmbient = new THREE.AmbientLight(0x2f1204, 0.12); // Increased from 0.052
+				const warmAmbient = new THREE.AmbientLight(0x2f1204, ambientIntensity);
 				scene.add(warmAmbient);
 			}
 
@@ -1785,14 +1794,14 @@
 										child.geometry = geometry;
 									}
 									child.material = new THREE.MeshPhysicalMaterial({
-										color: 0x1a0f05, // Lighter base color (was 0x090401)
-										roughness: 0.28, // Smoother surface (was 0.38)
-										metalness: 0.82, // More metallic (was 0.68)
-										clearcoat: 0.92, // Stronger clearcoat (was 0.78)
-										clearcoatRoughness: 0.15, // Smoother clearcoat (was 0.2)
-										reflectivity: 0.85, // More reflective (was 0.7)
-										emissive: 0x4a2508, // Brighter emissive glow (was 0x2a1002)
-										emissiveIntensity: 0.12 // Stronger glow (was 0.035)
+										color: isMobileDevice ? 0x1a0f05 : 0x090401, // Lighter on mobile only
+										roughness: isMobileDevice ? 0.28 : 0.38, // Smoother on mobile
+										metalness: isMobileDevice ? 0.82 : 0.68, // More metallic on mobile
+										clearcoat: isMobileDevice ? 0.92 : 0.78, // Stronger clearcoat on mobile
+										clearcoatRoughness: isMobileDevice ? 0.15 : 0.2,
+										reflectivity: isMobileDevice ? 0.85 : 0.7, // More reflective on mobile
+										emissive: isMobileDevice ? 0x4a2508 : 0x2a1002, // Brighter emissive on mobile
+										emissiveIntensity: isMobileDevice ? 0.12 : 0.035 // Stronger glow on mobile
 									});
 									logoMeshes.push(child);
 									logoMaterials.push(child.material);
