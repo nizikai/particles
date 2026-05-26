@@ -191,6 +191,37 @@
 			const isIPhoneX = /iPhone/.test(ua) && shortSide === 375 && longSide === 812 && window.devicePixelRatio >= 2.8;
 			const isLowSpecMobile = isTouch && (isIOS || isAndroid);
 			const desktopCores = navigator.hardwareConcurrency || 8;
+			
+			// Enhanced device capability detection
+			function detectDeviceCapability() {
+				const memory = navigator.deviceMemory || 4; // GB, defaults to 4 if unavailable
+				const cores = navigator.hardwareConcurrency || 4;
+				const isMobile = isTouch;
+				
+				// Check for known low-end devices
+				const isOldIOS = isIOS && /OS [89]_/.test(ua); // iOS 8-9
+				const isOldAndroid = isAndroid && /Android [45]\./.test(ua); // Android 4-5
+				
+				// Scoring system: lower = weaker device
+				let score = 0;
+				if (memory >= 8) score += 3;
+				else if (memory >= 4) score += 2;
+				else if (memory >= 2) score += 1;
+				
+				if (cores >= 8) score += 3;
+				else if (cores >= 4) score += 2;
+				else if (cores >= 2) score += 1;
+				
+				if (!isMobile) score += 2;
+				if (isOldIOS || isOldAndroid) score -= 2;
+				
+				// Classify device tier
+				if (score >= 7) return 'high';
+				if (score >= 4) return 'medium';
+				return 'low';
+			}
+			
+			const deviceTier = detectDeviceCapability();
 			const DESKTOP_SCENE_TOP_RATIO = 0.015;
 			const MOBILE_SCENE_TOP_RATIO = 0.25;
 
@@ -239,17 +270,74 @@
 				return 1.36;
 			}
 
-				const BASE_PIXEL_RATIO_CAP = getDesiredPixelRatioCap();
-				const OCEAN_GRID_X = isIPhoneX ? 160 : isLowSpecMobile ? 220 : isTouch ? 320 : 450;
-				const OCEAN_GRID_Z = isIPhoneX ? 96 : isLowSpecMobile ? 130 : isTouch ? 180 : 252;
-				const BASE_BLOOM_SCALE = isIPhoneX ? 0.64 : isLowSpecMobile ? 0.78 : isTouch ? 0.86 : 0.82;
-				const BLOOM_STRENGTH = isIPhoneX ? 1.68 : isLowSpecMobile ? 2.0 : isTouch ? 2.32 : 2.25;
-				const BLOOM_RADIUS = isIPhoneX ? 0.28 : isLowSpecMobile ? 0.36 : isTouch ? 0.46 : 0.5;
-				const BLOOM_THRESHOLD = isIPhoneX ? 0.68 : isLowSpecMobile ? 0.58 : isTouch ? 0.48 : 0.5;
-				const USE_MICRO_LAYER = !isTouch && desktopCores >= 8;
-				const POINT_SIZE_SCALE = isIPhoneX ? 0.84 : isLowSpecMobile ? 0.94 : isTouch ? 1.04 : 1.12;
-				const SHAFT_COUNT = isIPhoneX ? 1 : isLowSpecMobile ? 2 : 3;
-				const ENABLE_ATMOSPHERIC_SHAFTS = false;
+				// Tier-based configuration
+				function getTierConfig() {
+					switch(deviceTier) {
+						case 'low':
+							return {
+								pixelRatioCap: 1.0,
+								gridX: 140,
+								gridZ: 80,
+								bloomScale: 0.5,
+								bloomStrength: 1.4,
+								bloomRadius: 0.24,
+								bloomThreshold: 0.72,
+								useMicroLayer: false,
+								pointSizeScale: 0.76,
+								shaftCount: 0,
+								enableShafts: false,
+								usePostprocessing: false, // Skip bloom entirely on low-end
+								antialias: false
+							};
+						case 'medium':
+							return {
+								pixelRatioCap: isIPhoneX ? 1.38 : isLowSpecMobile ? 1.5 : 1.6,
+								gridX: isIPhoneX ? 160 : isLowSpecMobile ? 220 : 280,
+								gridZ: isIPhoneX ? 96 : isLowSpecMobile ? 130 : 160,
+								bloomScale: isIPhoneX ? 0.64 : isLowSpecMobile ? 0.78 : 0.82,
+								bloomStrength: isIPhoneX ? 1.68 : isLowSpecMobile ? 2.0 : 2.1,
+								bloomRadius: isIPhoneX ? 0.28 : isLowSpecMobile ? 0.36 : 0.42,
+								bloomThreshold: isIPhoneX ? 0.68 : isLowSpecMobile ? 0.58 : 0.52,
+								useMicroLayer: false,
+								pointSizeScale: isIPhoneX ? 0.84 : isLowSpecMobile ? 0.94 : 1.0,
+								shaftCount: isIPhoneX ? 1 : 2,
+								enableShafts: false,
+								usePostprocessing: true,
+								antialias: !isLowSpecMobile
+							};
+						case 'high':
+						default:
+							return {
+								pixelRatioCap: isTouch ? 1.88 : 1.9,
+								gridX: isTouch ? 320 : 450,
+								gridZ: isTouch ? 180 : 252,
+								bloomScale: isTouch ? 0.86 : 0.82,
+								bloomStrength: isTouch ? 2.32 : 2.25,
+								bloomRadius: isTouch ? 0.46 : 0.5,
+								bloomThreshold: isTouch ? 0.48 : 0.5,
+								useMicroLayer: !isTouch && desktopCores >= 8,
+								pointSizeScale: isTouch ? 1.04 : 1.12,
+								shaftCount: 3,
+								enableShafts: false,
+								usePostprocessing: true,
+								antialias: true
+							};
+					}
+				}
+				
+				const tierConfig = getTierConfig();
+				const BASE_PIXEL_RATIO_CAP = tierConfig.pixelRatioCap;
+				const OCEAN_GRID_X = tierConfig.gridX;
+				const OCEAN_GRID_Z = tierConfig.gridZ;
+				const BASE_BLOOM_SCALE = tierConfig.bloomScale;
+				const BLOOM_STRENGTH = tierConfig.bloomStrength;
+				const BLOOM_RADIUS = tierConfig.bloomRadius;
+				const BLOOM_THRESHOLD = tierConfig.bloomThreshold;
+				const USE_MICRO_LAYER = tierConfig.useMicroLayer;
+				const POINT_SIZE_SCALE = tierConfig.pointSizeScale;
+				const SHAFT_COUNT = tierConfig.shaftCount;
+				const ENABLE_ATMOSPHERIC_SHAFTS = tierConfig.enableShafts;
+				const FORCE_SKIP_POSTPROCESSING = !tierConfig.usePostprocessing;
 				const CURSOR_RADIUS = isTouch ? 0.48 : 0.46;
 				const CURSOR_STRENGTH = isTouch ? 1.0 : 0.94;
 				const CURSOR_SMOOTHING = isTouch ? 0.16 : 0.18;
@@ -968,13 +1056,20 @@
 				const avgFps = (perfState.totalFrames * 1000) / Math.max(1, perfState.totalMs);
 				let note = "stable";
 
-				if (avgFps < 36) {
+				// More aggressive downscaling for struggling devices
+				if (avgFps < 24) {
+					pixelRatioCap = Math.max(getMinimumPixelRatioCap() * 0.8, pixelRatioCap - 0.18);
+					bloomScale = Math.max(0.4, bloomScale - 0.12);
+					perfState.qualityTier = "performance";
+					note = "aggressive downscale";
+					applyRenderQuality();
+				} else if (avgFps < 36) {
 					pixelRatioCap = Math.max(getMinimumPixelRatioCap(), pixelRatioCap - 0.12);
 					bloomScale = Math.max(isTouch ? 0.68 : 0.74, bloomScale - 0.08);
 					perfState.qualityTier = "performance";
 					note = "auto downscale";
 					applyRenderQuality();
-				} else if (!isLowSpecMobile && avgFps > 56 && window.devicePixelRatio > pixelRatioCap + 0.08) {
+				} else if (!isLowSpecMobile && deviceTier !== 'low' && avgFps > 56 && window.devicePixelRatio > pixelRatioCap + 0.08) {
 					pixelRatioCap = Math.min(window.devicePixelRatio, pixelRatioCap + 0.2);
 					bloomScale = Math.min(1.0, bloomScale + 0.08);
 					perfState.qualityTier = "high";
@@ -984,6 +1079,7 @@
 
 				perfState.qualitySettled = true;
 				updatePerfHud(note);
+				console.log(`Quality settled: ${note} | FPS: ${avgFps.toFixed(1)} | Device tier: ${deviceTier}`);
 			}
 
 			function updateObeliskAnchorsFromLogo() {
@@ -1366,10 +1462,12 @@
 			function initRenderer() {
 				renderer = new THREE.WebGLRenderer({
 					canvas,
-					antialias: !isLowSpecMobile,
+					antialias: tierConfig.antialias,
 					alpha: false,
-					precision: "highp",
-					powerPreference: "high-performance"
+					precision: deviceTier === 'low' ? 'mediump' : 'highp',
+					powerPreference: deviceTier === 'low' ? 'default' : 'high-performance',
+					stencil: false, // Disable stencil buffer if not needed
+					depth: true
 				});
 				renderer.outputEncoding = THREE.sRGBEncoding;
 				renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -1676,6 +1774,17 @@
 			}
 
 			function initComposer() {
+				// Force skip postprocessing for low-end devices
+				if (FORCE_SKIP_POSTPROCESSING) {
+					useComposer = false;
+					composer = null;
+					bloomPass = null;
+					cinematicPass = null;
+					fxaaPass = null;
+					console.log('Postprocessing disabled for device tier:', deviceTier);
+					return;
+				}
+				
 				if (!canUsePostprocessing) {
 					useComposer = false;
 					composer = null;
@@ -1688,7 +1797,9 @@
 				try {
 					const renderSize = getRenderSize();
 					let composerTarget = null;
-					if (!isLowSpecMobile && renderer.capabilities?.isWebGL2 && THREE.WebGLMultisampleRenderTarget) {
+					
+					// Only use MSAA on medium/high tier devices
+					if (deviceTier !== 'low' && !isLowSpecMobile && renderer.capabilities?.isWebGL2 && THREE.WebGLMultisampleRenderTarget) {
 						composerTarget = new THREE.WebGLMultisampleRenderTarget(
 							renderSize.width,
 							renderSize.height,
@@ -1698,7 +1809,7 @@
 							}
 						);
 						composerTarget.texture.encoding = THREE.sRGBEncoding;
-						composerTarget.samples = isTouch ? 2 : 4;
+						composerTarget.samples = deviceTier === 'high' ? 4 : 2;
 					}
 
 					composer = composerTarget
@@ -1721,6 +1832,7 @@
 					composer.addPass(cinematicPass);
 					updateCinematicResolution();
 
+					// Skip FXAA on low-tier devices (already skipped via FORCE_SKIP_POSTPROCESSING)
 					fxaaPass = new THREE.ShaderPass(THREE.FXAAShader);
 					composer.addPass(fxaaPass);
 					updateFxaaResolution();
@@ -1827,6 +1939,11 @@
 				if (!startup.ok) {
 					throw new Error(startup.fatalMessage);
 				}
+
+				// Log device capability for debugging
+				console.log(`Device tier: ${deviceTier} | Memory: ${navigator.deviceMemory || 'unknown'}GB | Cores: ${navigator.hardwareConcurrency || 'unknown'}`);
+				console.log(`Particle grid: ${OCEAN_GRID_X}x${OCEAN_GRID_Z} = ${(OCEAN_GRID_X * OCEAN_GRID_Z).toLocaleString()} particles`);
+				console.log(`Postprocessing: ${!FORCE_SKIP_POSTPROCESSING ? 'enabled' : 'disabled'}`);
 
 				initStaticVectors();
 				initRenderer();
