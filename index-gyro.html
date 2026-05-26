@@ -16,7 +16,7 @@
 			width: 100%;
 			height: 100%;
 			overflow: hidden;
-			background: linear-gradient(180deg, #000000 0%, #070100 38%, #170602 100%);
+			background: #000000;
 		}
 
 		#webgl {
@@ -37,14 +37,14 @@
 			top: clamp(32px, 7vh, 96px);
 			left: clamp(24px, 5vw, 92px);
 			max-width: min(620px, calc(100vw - 48px));
-			color: #f7ead1;
+			color: #eafaff;
 			pointer-events: none;
-			text-shadow: 0 0 28px rgb(255 145 38 / 0.16);
+			text-shadow: 0 0 28px rgb(0 184 255 / 0.18);
 		}
 
 		.scene-kicker {
 			display: block;
-			color: #d5822a;
+			color: #18c8ff;
 			font: 700 12px/1.2 "Avenir Next", "Trebuchet MS", sans-serif;
 			letter-spacing: 0.22em;
 			text-transform: uppercase;
@@ -60,7 +60,7 @@
 		.scene-subtitle {
 			margin-top: 18px;
 			max-width: 28em;
-			color: rgb(247 234 209 / 0.68);
+			color: rgb(207 238 255 / 0.68);
 			font: 500 clamp(14px, 1.1vw, 18px) / 1.5 "Avenir Next", "Trebuchet MS", sans-serif;
 			letter-spacing: 0.02em;
 		}
@@ -152,6 +152,126 @@
 				display: none;
 			}
 
+			.style-tuner {
+				position: fixed;
+				right: 12px;
+				top: 12px;
+				width: 310px;
+				max-height: calc(100dvh - 24px);
+				overflow-y: auto;
+				padding: 12px 14px;
+				border: 1px solid #1f3346;
+				border-radius: 10px;
+				background: rgb(5 10 16 / 0.92);
+				color: #cfe6ff;
+				font: 11px/1.35 "SF Pro Text", "Segoe UI", sans-serif;
+				letter-spacing: 0.02em;
+				z-index: 50;
+			}
+
+			.style-tuner.collapsed .style-tuner-body { display: none; }
+
+			.style-tuner-header {
+				display: flex;
+				justify-content: space-between;
+				align-items: center;
+				margin-bottom: 8px;
+				font-weight: 600;
+				color: #8cd8ff;
+				letter-spacing: 0.1em;
+				text-transform: uppercase;
+				font-size: 10px;
+			}
+
+			.style-tuner-header button {
+				background: transparent;
+				color: #8cd8ff;
+				border: 1px solid #2a4a66;
+				border-radius: 4px;
+				font: 10px/1 "SF Pro Text", "Segoe UI", sans-serif;
+				padding: 3px 8px;
+				cursor: pointer;
+			}
+
+			.style-tuner-header button:hover { background: #143049; }
+
+			.style-section {
+				margin-top: 10px;
+				padding-top: 8px;
+				border-top: 1px solid #142436;
+			}
+
+			.style-section:first-of-type {
+				margin-top: 0;
+				padding-top: 0;
+				border-top: none;
+			}
+
+			.style-section-title {
+				color: #5a9dc8;
+				font-size: 9px;
+				letter-spacing: 0.14em;
+				text-transform: uppercase;
+				margin-bottom: 4px;
+			}
+
+			.style-row {
+				display: grid;
+				grid-template-columns: 1fr auto;
+				column-gap: 8px;
+				row-gap: 2px;
+				margin: 6px 0;
+				align-items: center;
+			}
+
+			.style-row label { color: #9ec8e8; }
+
+			.style-row .val {
+				color: #ffffff;
+				font-variant-numeric: tabular-nums;
+				font-size: 10px;
+			}
+
+			.style-row input[type="range"] {
+				grid-column: span 2;
+				width: 100%;
+				margin: 0;
+				accent-color: #18c8ff;
+			}
+
+			.style-row input[type="color"] {
+				justify-self: end;
+				width: 42px;
+				height: 22px;
+				padding: 0;
+				border: 1px solid #2a4a66;
+				border-radius: 4px;
+				background: transparent;
+				cursor: pointer;
+			}
+
+			.style-tuner .copy-btn {
+				display: block;
+				width: 100%;
+				margin-top: 12px;
+				padding: 9px 10px;
+				background: #18c8ff;
+				color: #001624;
+				border: none;
+				border-radius: 6px;
+				font: 600 11px/1 "SF Pro Text", "Segoe UI", sans-serif;
+				letter-spacing: 0.05em;
+				text-transform: uppercase;
+				cursor: pointer;
+			}
+
+			.style-tuner .copy-btn:hover { background: #4ddcff; }
+			.style-tuner .copy-btn.copied { background: #4dffae; }
+
+			@media (orientation: portrait) and (max-width: 720px) {
+				.style-tuner { width: calc(100vw - 24px); right: 12px; left: 12px; }
+			}
+
 			</style>
 	</head>
 	<body>
@@ -164,6 +284,13 @@
 		<div id="support" class="support hidden"></div>
 		<div id="perf" class="perf"></div>
 		<div id="tuner" class="tuner hidden"></div>
+		<div id="styleTuner" class="style-tuner">
+			<div class="style-tuner-header">
+				<span>Style Tuner</span>
+				<button id="styleTunerToggle" type="button">Hide</button>
+			</div>
+			<div class="style-tuner-body" id="styleTunerBody"></div>
+		</div>
 			<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 	<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 	<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/Pass.js"></script>
@@ -283,43 +410,43 @@
 								bloomRadius: 0.24,
 								bloomThreshold: 0.72,
 								useMicroLayer: false,
-								pointSizeScale: 0.76,
+								pointSizeScale: 1.5,
 								shaftCount: 0,
 								enableShafts: false,
-								usePostprocessing: false, // Skip bloom entirely on low-end
+								usePostprocessing: false,
 								antialias: false
 							};
 						case 'medium':
 							return {
-								pixelRatioCap: isIPhoneX ? 1.38 : isLowSpecMobile ? 1.5 : 1.6,
+								pixelRatioCap: isIPhoneX ? 1.6 : isLowSpecMobile ? 1.8 : 2.0,
 								gridX: isIPhoneX ? 160 : isLowSpecMobile ? 220 : 280,
 								gridZ: isIPhoneX ? 96 : isLowSpecMobile ? 130 : 160,
-								bloomScale: isIPhoneX ? 0.64 : isLowSpecMobile ? 0.78 : 0.82,
-								bloomStrength: isIPhoneX ? 1.68 : isLowSpecMobile ? 2.0 : 2.1,
-								bloomRadius: isIPhoneX ? 0.28 : isLowSpecMobile ? 0.36 : 0.42,
-								bloomThreshold: isIPhoneX ? 0.68 : isLowSpecMobile ? 0.58 : 0.52,
+								bloomScale: 1.0,
+								bloomStrength: isIPhoneX ? 1.4 : isLowSpecMobile ? 1.6 : 1.8,
+								bloomRadius: isIPhoneX ? 0.4 : isLowSpecMobile ? 0.48 : 0.55,
+								bloomThreshold: isIPhoneX ? 0.62 : isLowSpecMobile ? 0.52 : 0.48,
 								useMicroLayer: false,
-								pointSizeScale: isIPhoneX ? 0.84 : isLowSpecMobile ? 0.94 : 1.0,
+								pointSizeScale: isIPhoneX ? 0.9 : isLowSpecMobile ? 1.0 : 1.08,
 								shaftCount: isIPhoneX ? 1 : 2,
 								enableShafts: false,
-								usePostprocessing: true,
-								antialias: !isLowSpecMobile
+								usePostprocessing: false, // Disable bloom on mobile
+								antialias: true
 							};
 						case 'high':
 						default:
 							return {
-								pixelRatioCap: isTouch ? 1.88 : 1.9,
+								pixelRatioCap: isTouch ? 2.2 : 1.9,
 								gridX: isTouch ? 320 : 450,
 								gridZ: isTouch ? 180 : 252,
-								bloomScale: isTouch ? 0.86 : 0.82,
-								bloomStrength: isTouch ? 2.32 : 2.25,
-								bloomRadius: isTouch ? 0.46 : 0.5,
-								bloomThreshold: isTouch ? 0.48 : 0.5,
+								bloomScale: isTouch ? 1.0 : 0.82,
+								bloomStrength: isTouch ? 1.55 : 1.55,
+								bloomRadius: isTouch ? 1.32 : 1.32,
+								bloomThreshold: isTouch ? 0.44 : 0.44,
 								useMicroLayer: !isTouch && desktopCores >= 8,
-								pointSizeScale: isTouch ? 1.04 : 1.12,
+								pointSizeScale: isTouch ? 1.08 : 1.18,
 								shaftCount: 3,
 								enableShafts: false,
-								usePostprocessing: true,
+								usePostprocessing: !isTouch, // Disable bloom on mobile, keep on desktop
 								antialias: true
 							};
 					}
@@ -333,10 +460,11 @@
 				const BLOOM_STRENGTH = tierConfig.bloomStrength;
 				const BLOOM_RADIUS = tierConfig.bloomRadius;
 				const BLOOM_THRESHOLD = tierConfig.bloomThreshold;
-				const USE_MICRO_LAYER = tierConfig.useMicroLayer;
+				const USE_MICRO_LAYER = false;
 				const POINT_SIZE_SCALE = tierConfig.pointSizeScale;
 				const SHAFT_COUNT = tierConfig.shaftCount;
 				const ENABLE_ATMOSPHERIC_SHAFTS = tierConfig.enableShafts;
+				const ENABLE_BLOOM_PASS = !isTouch;
 				const FORCE_SKIP_POSTPROCESSING = !tierConfig.usePostprocessing;
 				const CURSOR_RADIUS = isTouch ? 0.48 : 0.46;
 				const CURSOR_STRENGTH = isTouch ? 1.0 : 0.94;
@@ -392,10 +520,11 @@
 				"RenderPass",
 				"CopyShader",
 				"FXAAShader",
-				"BufferGeometryUtils",
+				"BufferGeometryUtils"
+			].concat(ENABLE_BLOOM_PASS ? [
 				"LuminosityHighPassShader",
 				"UnrealBloomPass"
-			];
+			] : []);
 
 			let renderer;
 			let scene;
@@ -511,6 +640,7 @@
 				uniform float u_pointerSpeed;
 				uniform float u_pointerSwirl;
 				uniform float u_cursorInfluence;
+				uniform float u_maxSizeMul;
 					attribute float aSeed;
 
 					varying float vImpact;
@@ -770,14 +900,14 @@
 						float baseSize = (u_pointSize * mix(0.6, 1.08, aSeed)) + vCrest * 0.28 + vImpact * 0.2 + vHover * 0.14 + vCore * 0.28 + vSpray * 0.16 - vTendril * 0.08;
 						baseSize *= mix(1.0, 0.84, whip * vCore);
 						if (u_layer > 1.5) {
-							baseSize *= 0.48;
+							baseSize *= 0.42;
 						} else if (u_layer > 0.5) {
-							baseSize *= 0.9;
+							baseSize *= 0.62;
 						} else {
 							baseSize *= 0.72;
 						}
-						float maxSize = u_layer > 1.5 ? 1.08 : (u_layer > 0.5 ? 1.68 : 1.44);
-						gl_PointSize = clamp(baseSize * perspective, 0.28, maxSize);
+						float maxSize = (u_layer > 1.5 ? 1.0 : (u_layer > 0.5 ? 1.6 : 1.85)) * u_maxSizeMul;
+						gl_PointSize = clamp(baseSize * perspective, 0.35, maxSize);
 					}
 				`;
 
@@ -788,6 +918,8 @@
 				uniform float u_layer;
 				uniform vec3 u_colorDeep;
 				uniform vec3 u_colorBright;
+				uniform vec3 u_glowColor;
+				uniform float u_auraStrength;
 
 					varying float vImpact;
 					varying float vCrest;
@@ -802,15 +934,19 @@
 
 					void main() {
 						vec2 uv = gl_PointCoord - 0.5;
+						float radius = length(uv);
+						if (radius > 0.5) discard;
+						float edgeMask = 1.0 - smoothstep(0.32, 0.5, radius);
 						float body = exp(-dot(uv, uv) * (u_layer > 1.5 ? 42.0 : 31.0));
 						float core = exp(-dot(uv, uv) * (u_layer > 1.5 ? 126.0 : 92.0));
-						float halo = exp(-dot(uv, uv) * (u_layer > 1.5 ? 12.0 : 10.0));
+						float halo = exp(-dot(uv, uv) * (u_layer > 1.5 ? 12.0 : 9.0));
+						float aura = exp(-dot(uv, uv) * (u_layer > 1.5 ? 16.0 : 7.4));
 						if (u_layer > 1.5 && vSeed < 0.4) discard;
 
 						float highlight = clamp(vCrest * 0.82 + vImpact * 0.66 + vDepth * 0.22 + vHover * 0.2 + vCore * 0.62 + vStream * 0.32 + vSpray * 0.64, 0.0, 1.0);
 						vec3 col = mix(u_colorDeep, u_colorBright, highlight);
-						vec3 electricCore = vec3(1.0, 0.72, 0.24);
-						vec3 whiteHot = vec3(1.0, 0.95, 0.78);
+						vec3 electricCore = u_glowColor;
+						vec3 whiteHot = vec3(1.0, 1.0, 1.0);
 						if (u_layer > 0.5) {
 							col = mix(col, u_colorBright, 0.42);
 						}
@@ -820,22 +956,36 @@
 						col = mix(col, u_colorBright, vHover * (u_layer > 1.5 ? 0.26 : 0.2));
 						col = mix(col, electricCore, vCore * (u_layer > 1.5 ? 0.9 : 0.76));
 						col = mix(col, electricCore, vSpray * 0.78);
-						col = mix(col, whiteHot, clamp(vSpray * 0.22 + vImpact * 0.14, 0.0, 1.0));
+						col = mix(col, whiteHot, clamp(vSpray * 0.52 + vImpact * 0.32 + vCrest * 0.18, 0.0, 1.0));
+						col += u_glowColor * aura * (0.05 + highlight * 0.12 + vStream * 0.06) * u_auraStrength;
+						col *= 1.01 + highlight * 0.08 + vSpray * 0.1;
 
-						float sparkle = smoothstep(0.72, 1.0, vCrest) * (0.58 + core * 0.52 + vSpray * 0.2);
-						float alpha = body * (u_layer > 1.5 ? 0.026 : 0.038);
-						alpha += body * (vCrest * 0.14 + vImpact * 0.13);
-						alpha += core * (u_layer > 1.5 ? 0.088 : (u_layer > 0.5 ? 0.094 : 0.102));
-						alpha += halo * (u_layer > 1.5 ? 0.026 : (u_layer > 0.5 ? 0.031 : 0.038));
-						alpha += sparkle * (u_layer > 1.5 ? 0.25 : 0.21);
-						alpha += vHover * (u_layer > 1.5 ? 0.08 : 0.065);
-						alpha += vCore * (u_layer > 1.5 ? 0.28 : 0.22);
-						alpha += vTendril * (u_layer > 1.5 ? 0.074 : 0.064);
-						alpha += vStream * (u_layer > 1.5 ? 0.084 : 0.072);
-						alpha += vSpray * (u_layer > 1.5 ? 0.24 : 0.19);
-						alpha *= (0.39 + vDepth * 0.95);
+						// Chromatic sparkle variation — scattered green and deep-blue tinted particles
+						float chromaProxy = smoothstep(0.55, 1.0, vCrest) * (0.7 + core * 0.6);
+						float chromaGroup = fract(vSeed * 13.4);
+						vec3 greenSpark  = vec3(0.18, 1.0, 0.32) * 2.0;
+						vec3 deepBlue    = vec3(0.08, 0.35, 1.8);
+						float isGreen    = step(0.90, chromaGroup);
+						float isBlue     = step(0.78, chromaGroup) * (1.0 - isGreen);
+						col = mix(col, col * greenSpark,  isGreen * chromaProxy * 0.68);
+						col = mix(col, col * deepBlue,    isBlue  * chromaProxy * 0.52);
+
+						float sparkle = smoothstep(0.68, 1.0, vCrest) * (0.6 + core * 0.55 + vSpray * 0.24);
+						float alpha = body * (u_layer > 1.5 ? 0.032 : 0.048);
+						alpha += body * (vCrest * 0.18 + vImpact * 0.15);
+						alpha += core * (u_layer > 1.5 ? 0.10 : (u_layer > 0.5 ? 0.11 : 0.13));
+						alpha += halo * (u_layer > 1.5 ? 0.030 : (u_layer > 0.5 ? 0.036 : 0.044));
+						alpha += aura * (u_layer > 1.5 ? 0.010 : (u_layer > 0.5 ? 0.014 : 0.018)) * (0.24 + highlight * 0.40 + vStream * 0.22) * u_auraStrength;
+						alpha += sparkle * (u_layer > 1.5 ? 0.28 : 0.32);
+						alpha += halo * vHover * (u_layer > 1.5 ? 0.09 : 0.075);
+						alpha += core * vCore * (u_layer > 1.5 ? 0.30 : 0.26);
+						alpha += body * vTendril * (u_layer > 1.5 ? 0.084 : 0.072);
+						alpha += body * vStream * (u_layer > 1.5 ? 0.052 : 0.060);
+						alpha += core * vSpray * (u_layer > 1.5 ? 0.16 : 0.14);
+						alpha *= (0.44 + vDepth * 0.95);
 						alpha *= mix(1.0, 0.74, vTendril * (1.0 - vCore));
 						alpha *= mix(0.88, 1.1, vTwinkle);
+						alpha *= edgeMask;
 						alpha *= u_alphaScale;
 
 					if (alpha < 0.0012) discard;
@@ -848,10 +998,16 @@
 					tDiffuse: { value: null },
 					u_resolution: { value: new THREE.Vector2(1, 1) },
 					u_focus: { value: new THREE.Vector2(0.54, 0.5) },
-					u_exposure: { value: 1.04 },
-					u_saturation: { value: 1.16 },
-					u_sharpness: { value: isTouch ? 0.2 : 0.24 },
-					u_blurStrength: { value: isTouch ? 0.42 : 0.56 },
+					u_exposure: { value: 1.15 },
+					u_saturation: { value: 1.18 },
+					u_sharpness: { value: isTouch ? 0.18 : 0.22 },
+					u_blurStrength: { value: isTouch ? 0.2 : 0.24 },
+					u_glowTint: { value: new THREE.Color(0xff7300) },
+					u_gamma: { value: 0.86 },
+					u_tightGlowMix: { value: 0.0 },
+					u_streakGlowMix: { value: 1.43 },
+					u_glowSpread: { value: 0.2 },
+					u_glowThreshold: { value: 0.0 },
 					u_sceneTopRatio: { value: 0 }
 				},
 				vertexShader: `
@@ -872,6 +1028,12 @@
 					uniform float u_saturation;
 					uniform float u_sharpness;
 					uniform float u_blurStrength;
+					uniform vec3 u_glowTint;
+					uniform float u_gamma;
+					uniform float u_tightGlowMix;
+					uniform float u_streakGlowMix;
+					uniform float u_glowSpread;
+					uniform float u_glowThreshold;
 					uniform float u_sceneTopRatio;
 
 					varying vec2 vUv;
@@ -892,8 +1054,30 @@
 						return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715))));
 					}
 
+					vec3 brightSample(vec2 uv) {
+						vec2 inBounds = step(vec2(0.0), uv) * step(uv, vec2(1.0));
+						float boundsMask = inBounds.x * inBounds.y;
+						vec3 c = texture2D(tDiffuse, clamp(uv, vec2(0.0), vec2(1.0))).rgb * boundsMask;
+						float peak = max(max(c.r, c.g), c.b);
+						return c * smoothstep(u_glowThreshold, u_glowThreshold + 0.24, peak);
+					}
+
+					vec3 sampleGlow(vec2 uv, vec2 dir, float amount) {
+						vec2 px = dir / u_resolution;
+						vec3 c = brightSample(uv) * 0.28;
+						c += brightSample(uv + px * amount) * 0.22;
+						c += brightSample(uv - px * amount) * 0.22;
+						c += brightSample(uv + px * amount * 2.2) * 0.18;
+						c += brightSample(uv - px * amount * 2.2) * 0.18;
+						c += brightSample(uv + px * amount * 4.2) * 0.13;
+						c += brightSample(uv - px * amount * 4.2) * 0.13;
+						c += brightSample(uv + px * amount * 7.0) * 0.08;
+						c += brightSample(uv - px * amount * 7.0) * 0.08;
+						return c;
+					}
+
 					void main() {
-						vec3 sceneBaseColor = vec3(0.0902, 0.0235, 0.0078);
+						vec3 sceneBaseColor = vec3(0.0, 0.001, 0.003);
 						float pageY = clamp(u_sceneTopRatio + (1.0 - u_sceneTopRatio) * (1.0 - vUv.y), 0.0, 1.0);
 						vec3 pageBackground = mix(vec3(0.0), sceneBaseColor, smoothstep(0.0, 1.0, pageY));
 						pageBackground = clamp(pageBackground + (gradientNoise(gl_FragCoord.xy) - 0.5) * 0.006, 0.0, 1.0);
@@ -908,13 +1092,20 @@
 						float focusMask = 1.0 - smoothstep(0.16, 0.37, distToFocus);
 						float foregroundMask = smoothstep(0.52, 0.95, 1.0 - vUv.y);
 						float farMask = smoothstep(0.3, 0.92, distToFocus);
-						float blurMask = clamp((foregroundMask * 0.54 + farMask * 0.3) * (1.0 - focusMask * 0.92), 0.0, 0.72);
+						float blurMask = clamp((foregroundMask * 0.54 + farMask * 0.3) * (1.0 - focusMask * 0.92), 0.0, 0.38);
 
-						float blurRadius = mix(1.0, 6.5, blurMask) * u_blurStrength;
+						float blurRadius = mix(0.8, 3.2, blurMask) * u_blurStrength;
 						vec3 blurred = sampleBloom(vUv, vec2(1.0, 0.0), blurRadius);
 						blurred += sampleBloom(vUv, vec2(0.0, 1.0), blurRadius);
 						blurred *= 0.5;
-						vec3 color = mix(base, blurred, blurMask);
+						vec3 color = mix(base, blurred, blurMask * 0.35);
+						vec3 tightGlow = sampleGlow(vUv, normalize(vec2(0.72, 0.26)), 5.5 * u_glowSpread) * 0.10;
+						tightGlow += sampleGlow(vUv, normalize(vec2(-0.26, 0.72)), 5.5 * u_glowSpread) * 0.08;
+						tightGlow += sampleGlow(vUv, normalize(vec2(1.0, 0.0)), 9.0 * u_glowSpread) * 0.08;
+						tightGlow += sampleGlow(vUv, normalize(vec2(0.0, 1.0)), 9.0 * u_glowSpread) * 0.08;
+						vec3 streakGlow = sampleGlow(vUv, normalize(vec2(-0.42, -1.0)), 28.0 * u_glowSpread) * 0.16;
+						streakGlow += sampleGlow(vUv, normalize(vec2(-0.42, -1.0)), 58.0 * u_glowSpread) * 0.07;
+						color += tightGlow * u_tightGlowMix + streakGlow * u_glowTint * u_streakGlowMix;
 
 						vec2 px = 1.0 / u_resolution;
 						vec3 neighbor = (
@@ -926,11 +1117,11 @@
 						float sharpMask = clamp(0.42 + focusMask * 1.08 - blurMask * 0.7, 0.0, 1.0);
 						color += (base - neighbor) * u_sharpness * sharpMask;
 
-						float glowSeed = smoothstep(0.18, 0.86, max(max(color.r, color.g), color.b));
-						color += vec3(0.48, 0.16, 0.01) * glowSeed * (0.12 + blurMask * 0.12);
+						float glowSeed = smoothstep(0.22, 0.92, max(max(color.r, color.g), color.b));
+						color += u_glowTint * glowSeed * (0.06 + blurMask * 0.08);
 						color *= u_exposure;
-						color += vec3(0.0, 0.012, 0.026);
-						color = pow(max(color, 0.0), vec3(0.9));
+						// removed blue tint addition — keep dark areas pure black
+						color = pow(max(color, 0.0), vec3(u_gamma));
 
 						float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
 						color = mix(vec3(luma), color, u_saturation);
@@ -954,6 +1145,7 @@
 						u_alphaScale: { value: config.alphaScale },
 						u_colorDeep: { value: new THREE.Color(config.colorDeep) },
 						u_colorBright: { value: new THREE.Color(config.colorBright) },
+						u_glowColor: { value: new THREE.Color(config.glowColor) },
 						u_cursor: { value: new THREE.Vector2(pointerState.x, pointerState.y) },
 						u_cursorVelocity: { value: new THREE.Vector2(0, 0) },
 						u_cursorRadius: { value: config.cursorRadius },
@@ -962,6 +1154,8 @@
 						u_pointerSpeed: { value: 0 },
 						u_pointerSwirl: { value: 0 },
 						u_cursorInfluence: { value: 0 },
+						u_maxSizeMul: { value: 1.98 },
+						u_auraStrength: { value: 2.02 },
 						u_obeliskA: { value: obeliskA.clone() },
 						u_obeliskB: { value: obeliskB.clone() },
 						u_obeliskC: { value: obeliskC.clone() }
@@ -1013,8 +1207,9 @@
 				const fpsText = perfState.fps > 0 ? perfState.fps.toFixed(0) : "--";
 				const dprText = renderer ? renderer.getPixelRatio().toFixed(2) : "--";
 				const particles = perfState.particleCount > 0 ? perfState.particleCount.toLocaleString() : "--";
+				const bloomText = ENABLE_BLOOM_PASS ? bloomScale.toFixed(2) : "off";
 				const suffix = note ? ` | ${note}` : "";
-				perf.textContent = `FPS ${fpsText} | DPR ${dprText} | cap ${pixelRatioCap.toFixed(2)} | bloom ${bloomScale.toFixed(2)} | pts ${particles} | ${perfState.qualityTier}${suffix}`;
+				perf.textContent = `FPS ${fpsText} | DPR ${dprText} | cap ${pixelRatioCap.toFixed(2)} | bloom ${bloomText} | pts ${particles} | ${perfState.qualityTier}${suffix}`;
 			}
 
 			function updateCinematicResolution() {
@@ -1055,15 +1250,17 @@
 				renderer.setPixelRatio(renderPixelRatio);
 				renderer.setSize(renderSize.width, renderSize.height, false);
 
-				if (useComposer && composer && bloomPass) {
+				if (useComposer && composer) {
 					if (typeof composer.setPixelRatio === "function") {
 						composer.setPixelRatio(renderPixelRatio);
 					}
 					composer.setSize(renderSize.width, renderSize.height);
-					bloomPass.setSize(
-						Math.max(1, Math.floor(renderSize.width * bloomScale)),
-						Math.max(1, Math.floor(renderSize.height * bloomScale))
-					);
+					if (bloomPass) {
+						bloomPass.setSize(
+							Math.max(1, Math.floor(renderSize.width * bloomScale)),
+							Math.max(1, Math.floor(renderSize.height * bloomScale))
+						);
+					}
 					updateCinematicResolution();
 					updateFxaaResolution();
 				}
@@ -1559,12 +1756,7 @@
 				logoWrapper.rotation.set(logoPose.rx, logoPose.ry, logoPose.rz);
 				logoWrapper.scale.setScalar(logoBaseScale * profile.logoScale);
 
-				logoMaterials.forEach((material) => {
-					// Mobile gets brighter settings
-					material.roughness = isMobileDevice ? 0.28 : 0.38;
-					material.clearcoat = isMobileDevice ? 0.92 : 0.78;
-					material.emissiveIntensity = isMobileDevice ? 0.12 : 0.035;
-				});
+				// Material properties are set in addLogoModel and now controlled live via the Style Tuner.
 			}
 
 			function detectWebGLIssue() {
@@ -1645,8 +1837,8 @@
 				});
 				renderer.outputEncoding = THREE.sRGBEncoding;
 				renderer.toneMapping = THREE.ACESFilmicToneMapping;
-				renderer.toneMappingExposure = 1.14;
-				renderer.setClearColor(0x170602, 1);
+				renderer.toneMappingExposure = 1.97;
+				renderer.setClearColor(0x000000, 1);
 				applyRenderQuality();
 			}
 
@@ -1654,8 +1846,8 @@
 				const renderSize = getRenderSize();
 				const profile = getSceneProfile();
 				scene = new THREE.Scene();
-				scene.background = new THREE.Color(0x170602);
-				scene.fog = new THREE.FogExp2(0x341304, 0.021);
+				scene.background = new THREE.Color(0x000000);
+				scene.fog = new THREE.FogExp2(0x000000, 0.013);
 
 				camera = new THREE.PerspectiveCamera(profile.fov, renderSize.width / renderSize.height, 0.1, 80);
 				camera.position.copy(cameraBase);
@@ -1683,28 +1875,28 @@
 				const skyIntensity = isMobileDevice ? 0.28 : 0.17;
 				const ambientIntensity = isMobileDevice ? 0.12 : 0.052;
 				
-				const downKey = new THREE.DirectionalLight(0xffcc8a, keyIntensity);
+				const downKey = new THREE.DirectionalLight(0xffe8b8, keyIntensity);
 				downKey.position.set(-0.8, 9.5, -1.2);
 				downKey.target.position.set(0, 0, 0);
 				scene.add(downKey);
 				scene.add(downKey.target);
 
-				const rim = new THREE.DirectionalLight(0xff8a1f, rimIntensity);
+				const rim = new THREE.DirectionalLight(0xff9a3a, rimIntensity);
 				rim.position.set(-5.0, 2.8, -3.9);
 				scene.add(rim);
 
-				const rearWarm = new THREE.DirectionalLight(0xff6a14, rearIntensity);
+				const rearWarm = new THREE.DirectionalLight(0xff5a14, rearIntensity);
 				rearWarm.position.set(4.4, 1.9, -4.8);
 				scene.add(rearWarm);
 
-				const frontFill = new THREE.DirectionalLight(0xa34e1a, fillIntensity);
+				const frontFill = new THREE.DirectionalLight(0x6b3500, fillIntensity);
 				frontFill.position.set(3.3, 1.35, 2.8);
 				scene.add(frontFill);
 
-				const sky = new THREE.HemisphereLight(0xffa74f, 0x160602, skyIntensity);
+				const sky = new THREE.HemisphereLight(0xff9a3a, 0x140600, skyIntensity);
 				scene.add(sky);
 
-				const warmAmbient = new THREE.AmbientLight(0x2f1204, ambientIntensity);
+				const warmAmbient = new THREE.AmbientLight(0x2a1200, ambientIntensity);
 				scene.add(warmAmbient);
 			}
 
@@ -1712,9 +1904,11 @@
 				const leftGeom = new THREE.BoxGeometry(0.84, 2.75, 0.58);
 				const rightGeom = new THREE.BoxGeometry(0.98, 3.9, 0.68);
 				const mat = new THREE.MeshStandardMaterial({
-					color: 0x000000,
-					roughness: 0.8,
-					metalness: 0.2
+					color: 0x0f0900,
+					roughness: 0.41,
+					metalness: 1.0,
+					emissive: 0x0a0500,
+					emissiveIntensity: 0.10
 				});
 
 				const left = new THREE.Mesh(leftGeom, mat);
@@ -1794,14 +1988,14 @@
 										child.geometry = geometry;
 									}
 									child.material = new THREE.MeshPhysicalMaterial({
-										color: isMobileDevice ? 0x1a0f05 : 0x090401, // Lighter on mobile only
-										roughness: isMobileDevice ? 0.28 : 0.38, // Smoother on mobile
-										metalness: isMobileDevice ? 0.82 : 0.68, // More metallic on mobile
-										clearcoat: isMobileDevice ? 0.92 : 0.78, // Stronger clearcoat on mobile
-										clearcoatRoughness: isMobileDevice ? 0.15 : 0.2,
-										reflectivity: isMobileDevice ? 0.85 : 0.7, // More reflective on mobile
-										emissive: isMobileDevice ? 0x4a2508 : 0x2a1002, // Brighter emissive on mobile
-										emissiveIntensity: isMobileDevice ? 0.12 : 0.035 // Stronger glow on mobile
+										color: 0x0f0900,
+										roughness: 0.41,
+										metalness: 1.0,
+										clearcoat: 0.0,
+										clearcoatRoughness: 0.28,
+										reflectivity: 0.85,
+										emissive: 0x0a0500,
+										emissiveIntensity: 0.10
 									});
 									logoMeshes.push(child);
 									logoMaterials.push(child.material);
@@ -1862,34 +2056,37 @@
 						: null;
 
 				coreMaterial = createOceanMaterial({
-					pointSize: (isTouch ? 0.68 : 0.6) * POINT_SIZE_SCALE,
+					pointSize: (isTouch ? 0.75 : 0.68) * POINT_SIZE_SCALE,
 					layer: 0,
-					alphaScale: 1.36,
+					alphaScale: 2.77,
 					cursorRadius: CURSOR_RADIUS,
 					cursorStrength: CURSOR_STRENGTH,
-					colorDeep: "#5c2403",
-					colorBright: "#ff9a27"
+					colorDeep: "#331b00",
+					colorBright: "#cc8100",
+					glowColor: "#ff7b00"
 				});
 
 					hazeMaterial = createOceanMaterial({
-						pointSize: (isTouch ? 1.02 : 0.9) * POINT_SIZE_SCALE,
+						pointSize: (isTouch ? 0.86 : 0.78) * POINT_SIZE_SCALE,
 						layer: 1,
-						alphaScale: 0.96,
+						alphaScale: 1.3,
 						cursorRadius: CURSOR_RADIUS * 0.9,
 						cursorStrength: CURSOR_STRENGTH * 0.82,
-						colorDeep: "#3b1202",
-						colorBright: "#ff7a18"
+						colorDeep: "#1f1000",
+						colorBright: "#ff9a3a",
+						glowColor: "#ff7b00"
 					});
 
 					if (USE_MICRO_LAYER) {
 						microMaterial = createOceanMaterial({
-							pointSize: (isTouch ? 0.42 : 0.32) * POINT_SIZE_SCALE,
+							pointSize: (isTouch ? 0.32 : 0.28) * POINT_SIZE_SCALE,
 							layer: 2,
-							alphaScale: 0.72,
+							alphaScale: 0.12,
 							cursorRadius: CURSOR_RADIUS * 0.76,
 							cursorStrength: CURSOR_STRENGTH * 0.58,
-							colorDeep: "#743104",
-							colorBright: "#ffb35a"
+							colorDeep: "#002033",
+							colorBright: "#7ef4ff",
+							glowColor: "#30e0ff"
 						});
 					}
 
@@ -1956,14 +2153,14 @@
 			}
 
 			function initComposer() {
-				// Force skip postprocessing for low-end devices
-				if (FORCE_SKIP_POSTPROCESSING) {
+				// Force skip ALL postprocessing for mobile devices
+				if (FORCE_SKIP_POSTPROCESSING || isMobileDevice) {
 					useComposer = false;
 					composer = null;
 					bloomPass = null;
 					cinematicPass = null;
 					fxaaPass = null;
-					console.log('Postprocessing disabled for device tier:', deviceTier);
+					console.log('All postprocessing disabled for mobile/low-tier devices');
 					return;
 				}
 				
@@ -1980,8 +2177,8 @@
 					const renderSize = getRenderSize();
 					let composerTarget = null;
 					
-					// Only use MSAA on medium/high tier devices
-					if (deviceTier !== 'low' && !isLowSpecMobile && renderer.capabilities?.isWebGL2 && THREE.WebGLMultisampleRenderTarget) {
+					// Use MSAA on all mobile devices to reduce bloom artifacts
+					if (deviceTier !== 'low' && renderer.capabilities?.isWebGL2 && THREE.WebGLMultisampleRenderTarget) {
 						composerTarget = new THREE.WebGLMultisampleRenderTarget(
 							renderSize.width,
 							renderSize.height,
@@ -1991,7 +2188,8 @@
 							}
 						);
 						composerTarget.texture.encoding = THREE.sRGBEncoding;
-						composerTarget.samples = deviceTier === 'high' ? 4 : 2;
+						// Higher MSAA samples for mobile to reduce blocky bloom
+						composerTarget.samples = isMobileDevice ? 8 : (deviceTier === 'high' ? 4 : 2);
 					}
 
 					composer = composerTarget
@@ -2002,13 +2200,15 @@
 					}
 					composer.addPass(new THREE.RenderPass(scene, camera));
 
-					bloomPass = new THREE.UnrealBloomPass(
-						new THREE.Vector2(renderSize.width, renderSize.height),
-						BLOOM_STRENGTH,
-						BLOOM_RADIUS,
-						BLOOM_THRESHOLD
-					);
-					composer.addPass(bloomPass);
+					if (ENABLE_BLOOM_PASS) {
+						bloomPass = new THREE.UnrealBloomPass(
+							new THREE.Vector2(renderSize.width, renderSize.height),
+							BLOOM_STRENGTH,
+							BLOOM_RADIUS,
+							BLOOM_THRESHOLD
+						);
+						composer.addPass(bloomPass);
+					}
 
 					cinematicPass = new THREE.ShaderPass(cinematicGradeShader);
 					composer.addPass(cinematicPass);
@@ -2118,6 +2318,236 @@
 				}
 			}
 
+			const styleState = {
+				// Exposure
+				toneMappingExposure: 1.97,
+				cinematicExposure: 1.15,
+				gamma: 0.86,
+				// Particles
+				coreAlphaScale: 2.77,
+				hazeAlphaScale: 1.3,
+				maxSizeMul: 1.98,
+				auraStrength: 2.02,
+				fogDensity: 0.013,
+				// Cinematic glow (post-process bleed)
+				tightGlowMix: 0.0,
+				streakGlowMix: 1.43,
+				glowSpread: 0.2,
+				glowThreshold: 0.0,
+				// Unreal bloom
+				bloomStrength: 1.55,
+				bloomRadius: 1.32,
+				bloomThreshold: 0.44,
+				// Colors
+				colorBright: "#cc8100",
+				glowColor: "#ff7b00",
+				colorDeep: "#331b00",
+				glowTint: "#ff7300",
+				// Obelisk material
+				obeliskColor: "#0f0900",
+				obeliskEmissive: "#0a0500",
+				obeliskEmissiveIntensity: 0.10,
+				obeliskMetalness: 1.0,
+				obeliskRoughness: 0.41,
+				obeliskClearcoat: 0.0
+			};
+
+			function setupStyleTuner() {
+				const panel = document.getElementById("styleTuner");
+				const body = document.getElementById("styleTunerBody");
+				const toggle = document.getElementById("styleTunerToggle");
+				if (!panel || !body || !toggle) return;
+
+				const sections = [
+					{
+						title: "Exposure & Tone",
+						sliders: [
+							{ key: "toneMappingExposure", label: "Tone Map Expose",     min: 0.4, max: 3.0, step: 0.01 },
+							{ key: "cinematicExposure",   label: "Cinematic Expose",   min: 0.4, max: 2.5, step: 0.01 },
+							{ key: "gamma",               label: "Gamma (lower=brighter)", min: 0.5, max: 1.4, step: 0.01 }
+						]
+					},
+					{
+						title: "Particles",
+						sliders: [
+							{ key: "coreAlphaScale", label: "Core Alpha",        min: 0.2, max: 5.0,  step: 0.01 },
+							{ key: "hazeAlphaScale", label: "Haze Alpha",        min: 0.0, max: 3.0,  step: 0.01 },
+							{ key: "maxSizeMul",     label: "Particle Size Mul", min: 0.4, max: 3.0,  step: 0.01 },
+							{ key: "auraStrength",   label: "Per-Particle Aura", min: 0.0, max: 4.0,  step: 0.01 },
+							{ key: "fogDensity",     label: "Fog Density",       min: 0.0, max: 0.05, step: 0.001 }
+						]
+					},
+					{
+						title: "Cinematic Glow",
+						sliders: [
+							{ key: "tightGlowMix",  label: "Tight Halo",       min: 0.0, max: 4.0, step: 0.01 },
+							{ key: "streakGlowMix", label: "Streak / Shafts",  min: 0.0, max: 4.0, step: 0.01 },
+							{ key: "glowSpread",    label: "Glow Spread",      min: 0.2, max: 4.0, step: 0.01 },
+							{ key: "glowThreshold", label: "Glow Threshold",   min: 0.0, max: 0.5, step: 0.01 }
+						]
+					},
+					{
+						title: "Bloom (UnrealBloomPass)",
+						sliders: [
+							{ key: "bloomStrength",  label: "Bloom Strength",  min: 0.0, max: 3.0, step: 0.01 },
+							{ key: "bloomRadius",    label: "Bloom Radius",    min: 0.0, max: 1.5, step: 0.01 },
+							{ key: "bloomThreshold", label: "Bloom Threshold", min: 0.0, max: 1.0, step: 0.01 }
+						]
+					},
+					{
+						title: "Colors",
+						colors: [
+							{ key: "colorBright", label: "Bright Color" },
+							{ key: "glowColor",   label: "Glow Color (in-particle)" },
+							{ key: "colorDeep",   label: "Deep Color" },
+							{ key: "glowTint",    label: "Streak Tint (post)" }
+						]
+					},
+					{
+						title: "Obelisk Material",
+						sliders: [
+							{ key: "obeliskEmissiveIntensity", label: "Emissive Intensity", min: 0.0, max: 2.0, step: 0.01 },
+							{ key: "obeliskMetalness",         label: "Metalness",          min: 0.0, max: 1.0, step: 0.01 },
+							{ key: "obeliskRoughness",         label: "Roughness",          min: 0.0, max: 1.0, step: 0.01 },
+							{ key: "obeliskClearcoat",         label: "Clearcoat",          min: 0.0, max: 1.0, step: 0.01 }
+						],
+						colors: [
+							{ key: "obeliskColor",    label: "Base Color" },
+							{ key: "obeliskEmissive", label: "Emissive Color" }
+						]
+					}
+				];
+
+				sections.forEach((section) => {
+					const sec = document.createElement("div");
+					sec.className = "style-section";
+					const title = document.createElement("div");
+					title.className = "style-section-title";
+					title.textContent = section.title;
+					sec.appendChild(title);
+
+					(section.sliders || []).forEach((cfg) => {
+						const row = document.createElement("div");
+						row.className = "style-row";
+						row.innerHTML = `
+							<label for="st-${cfg.key}">${cfg.label}</label>
+							<span class="val" id="st-${cfg.key}-val"></span>
+							<input type="range" id="st-${cfg.key}"
+								min="${cfg.min}" max="${cfg.max}" step="${cfg.step}"
+								value="${styleState[cfg.key]}">
+						`;
+						sec.appendChild(row);
+						const input = row.querySelector("input");
+						const valEl = row.querySelector(".val");
+						const fmt = (v) => cfg.step < 0.01 ? v.toFixed(3) : v.toFixed(2);
+						valEl.textContent = fmt(styleState[cfg.key]);
+						input.addEventListener("input", () => {
+							const v = parseFloat(input.value);
+							styleState[cfg.key] = v;
+							valEl.textContent = fmt(v);
+							applyStyleState();
+						});
+					});
+
+					(section.colors || []).forEach((cfg) => {
+						const row = document.createElement("div");
+						row.className = "style-row";
+						row.innerHTML = `
+							<label for="st-${cfg.key}">${cfg.label}</label>
+							<input type="color" id="st-${cfg.key}" value="${styleState[cfg.key]}">
+						`;
+						sec.appendChild(row);
+						const input = row.querySelector("input");
+						input.addEventListener("input", () => {
+							styleState[cfg.key] = input.value;
+							applyStyleState();
+						});
+					});
+
+					body.appendChild(sec);
+				});
+
+				const copyBtn = document.createElement("button");
+				copyBtn.type = "button";
+				copyBtn.className = "copy-btn";
+				copyBtn.textContent = "Copy Values";
+				copyBtn.addEventListener("click", async () => {
+					const out = JSON.stringify(styleState, null, 2);
+					try {
+						await navigator.clipboard.writeText(out);
+						copyBtn.classList.add("copied");
+						copyBtn.textContent = "Copied!";
+						setTimeout(() => {
+							copyBtn.classList.remove("copied");
+							copyBtn.textContent = "Copy Values";
+						}, 1200);
+					} catch (err) {
+						copyBtn.textContent = "See console";
+					}
+					console.log("=== Style Tuner Values ===");
+					console.log(out);
+				});
+				body.appendChild(copyBtn);
+
+				toggle.addEventListener("click", () => {
+					const isCollapsed = panel.classList.toggle("collapsed");
+					toggle.textContent = isCollapsed ? "Show" : "Hide";
+				});
+
+				applyStyleState();
+			}
+
+			function applyStyleState() {
+				if (renderer) renderer.toneMappingExposure = styleState.toneMappingExposure;
+
+				if (cinematicPass?.material?.uniforms) {
+					const u = cinematicPass.material.uniforms;
+					u.u_exposure.value       = styleState.cinematicExposure;
+					u.u_gamma.value          = styleState.gamma;
+					u.u_tightGlowMix.value   = styleState.tightGlowMix;
+					u.u_streakGlowMix.value  = styleState.streakGlowMix;
+					u.u_glowSpread.value     = styleState.glowSpread;
+					u.u_glowThreshold.value  = styleState.glowThreshold;
+					u.u_glowTint.value.set(styleState.glowTint);
+				}
+
+				if (coreMaterial?.uniforms) {
+					const u = coreMaterial.uniforms;
+					u.u_alphaScale.value   = styleState.coreAlphaScale;
+					u.u_maxSizeMul.value   = styleState.maxSizeMul;
+					u.u_auraStrength.value = styleState.auraStrength;
+					u.u_colorBright.value.set(styleState.colorBright);
+					u.u_glowColor.value.set(styleState.glowColor);
+					u.u_colorDeep.value.set(styleState.colorDeep);
+				}
+
+				if (hazeMaterial?.uniforms) {
+					const u = hazeMaterial.uniforms;
+					u.u_alphaScale.value   = styleState.hazeAlphaScale;
+					u.u_maxSizeMul.value   = styleState.maxSizeMul;
+					u.u_auraStrength.value = styleState.auraStrength;
+				}
+
+				if (scene?.fog) scene.fog.density = styleState.fogDensity;
+
+				if (bloomPass) {
+					bloomPass.strength  = styleState.bloomStrength;
+					bloomPass.radius    = styleState.bloomRadius;
+					bloomPass.threshold = styleState.bloomThreshold;
+				}
+
+				if (logoMaterials && logoMaterials.length) {
+					logoMaterials.forEach((m) => {
+						if (m.color) m.color.set(styleState.obeliskColor);
+						if (m.emissive) m.emissive.set(styleState.obeliskEmissive);
+						m.emissiveIntensity = styleState.obeliskEmissiveIntensity;
+						m.metalness = styleState.obeliskMetalness;
+						m.roughness = styleState.obeliskRoughness;
+						if ("clearcoat" in m) m.clearcoat = styleState.obeliskClearcoat;
+					});
+				}
+			}
+
 			async function boot() {
 				const startup = runStartupChecks();
 				if (!startup.ok) {
@@ -2140,6 +2570,7 @@
 				addAtmosphericShafts();
 					initComposer();
 					setPerfOverlayVisibility();
+					setupStyleTuner();
 					setupGyroCameraAccess();
 					window.addEventListener("keydown", onPoseKeydown);
 					window.addEventListener("pointermove", onPointerMove, { passive: true });
