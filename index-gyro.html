@@ -429,7 +429,7 @@
 								pointSizeScale: isIPhoneX ? 0.9 : isLowSpecMobile ? 1.0 : 1.08,
 								shaftCount: isIPhoneX ? 1 : 2,
 								enableShafts: false,
-								usePostprocessing: false, // Disable bloom on mobile
+								usePostprocessing: true, // Keep cinematic post FX on medium-tier mobile; bloom still gated separately
 								antialias: true
 							};
 						case 'high':
@@ -446,7 +446,7 @@
 								pointSizeScale: isTouch ? 1.08 : 1.18,
 								shaftCount: 3,
 								enableShafts: false,
-								usePostprocessing: !isTouch, // Disable bloom on mobile, keep on desktop
+								usePostprocessing: true, // Keep cinematic post FX on high-tier mobile; bloom still gated separately
 								antialias: true
 							};
 					}
@@ -2153,14 +2153,14 @@
 			}
 
 			function initComposer() {
-				// Force skip ALL postprocessing for mobile devices
-				if (FORCE_SKIP_POSTPROCESSING || isMobileDevice) {
+				// Skip all postprocessing only on tiers that explicitly force it
+				if (FORCE_SKIP_POSTPROCESSING) {
 					useComposer = false;
 					composer = null;
 					bloomPass = null;
 					cinematicPass = null;
 					fxaaPass = null;
-					console.log('All postprocessing disabled for mobile/low-tier devices');
+					console.log('All postprocessing disabled for low-tier devices');
 					return;
 				}
 				

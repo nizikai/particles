@@ -1,23 +1,21 @@
 # Project Journal
 
-## Current State (2026-05-26)
-- Active file: `index-gyro.html` (gyro/mobile variant).
-- Visual target remains cool neon-cyan particles on near-black with directional light shafts.
-- Bloom pass stays disabled (`ENABLE_BLOOM_PASS = false`) to avoid prior rectangular artifacting.
+## Current State (2026-05-27)
+- Active file: `index-gyro.html`.
+- Goal: keep mobile and desktop visuals closer in perceived glow/brightness.
+- Bloom remains disabled on touch (`ENABLE_BLOOM_PASS = !isTouch`) to avoid prior bloom artifacts.
 
-## Latest Change (De-Stack / Anti-Aurora pass)
-- Addressed layered translucent/stacked look by reducing additive accumulation:
-  - Forced `USE_MICRO_LAYER = false` (removes third additive particle sheet).
-  - Reduced secondary haze layer footprint (`pointSize` and `alphaScale` lowered).
-  - Reduced fragment aura/stream/spray alpha gain and color amplification.
-  - Reduced cinematic blur/glow strength (`u_blurStrength`, blur mask/radius, streak/tight glow gains).
-  - Kept core layer bright enough (`alphaScale` raised to `1.02`) so scene does not go flat.
+## Latest Change (Mobile Glow Parity)
+- Root cause: mobile path was fully skipping postprocessing, so cinematic glow grading never ran.
+- Updated tier config so `usePostprocessing` is enabled for `medium` and `high` tiers.
+- Updated `initComposer()` guard to skip postprocessing only when `FORCE_SKIP_POSTPROCESSING` is true (low-tier path).
+- Resulting behavior:
+  - Low-tier devices: direct render (no postprocessing).
+  - Medium/High mobile: cinematic postprocess enabled, bloom still off.
+  - Desktop: unchanged bloom/cinematic behavior.
 
 ## Verification
-- Inline script syntax parse passes (`node vm.Script` check).
-- Local dev server: `python3 -m http.server 5501`, page at `http://127.0.0.1:5501/index-gyro.html`.
-- Headless WebGL captures are unreliable in this environment; final visual QA should be in a normal browser session.
+- Inline script parse check passes (`node vm.Script`).
 
-## Next Tuning Knobs
-- If still too “sheet-like”: lower haze `alphaScale` further (current `0.28`).
-- If too dim after that: increase core `alphaScale` slightly (current `1.02`).
+## Next Check
+- Validate on real phone + desktop side-by-side for glow parity and FPS stability.
