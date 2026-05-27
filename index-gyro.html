@@ -473,7 +473,7 @@
 				const CURSOR_RELEASE_FALLOFF = isTouch ? 0.02 : 0.026;
 				const CURSOR_RECENTER_WHEN_IDLE = isTouch ? 0.32 : 0.28;
 				const CURSOR_VEL_DAMP = isTouch ? 0.88 : 0.9;
-				const GYRO_TILT_RANGE = isIPhoneX ? 18 : 22; // Increased from 9/10.5 for more sensitivity
+				const GYRO_TILT_RANGE = (isIPhoneX ? 18 : 22) / 1.5; // 1.5x more tilt sensitivity (smaller range = larger response)
 				const GYRO_SMOOTHING = 0.08; // Reduced from 0.12 for smoother motion
 				const GYRO_INFLUENCE_MULTIPLIER = 1.8; // Amplify gyro effect
 				const FXAA_STRENGTH = isTouch ? 1.0 : 1.24;
@@ -2351,6 +2351,38 @@
 				obeliskRoughness: 0.41,
 				obeliskClearcoat: 0.0
 			};
+
+			const MOBILE_STYLE_OVERRIDES = {
+				toneMappingExposure: 2.47,
+				cinematicExposure: 1.66,
+				gamma: 0.9,
+				coreAlphaScale: 1.49,
+				hazeAlphaScale: 0.73,
+				maxSizeMul: 2.27,
+				auraStrength: 2.44,
+				fogDensity: 0,
+				tightGlowMix: 2.63,
+				streakGlowMix: 2,
+				glowSpread: 1.97,
+				glowThreshold: 0.18,
+				bloomStrength: 1.98,
+				bloomRadius: 1.11,
+				bloomThreshold: 0.68,
+				colorBright: "#cc8100",
+				glowColor: "#ff7b00",
+				colorDeep: "#331b00",
+				glowTint: "#ff7300",
+				obeliskColor: "#0f0900",
+				obeliskEmissive: "#0a0500",
+				obeliskEmissiveIntensity: 0.08,
+				obeliskMetalness: 1,
+				obeliskRoughness: 0.38,
+				obeliskClearcoat: 0
+			};
+
+			if (isMobileDevice) {
+				Object.assign(styleState, MOBILE_STYLE_OVERRIDES);
+			}
 
 			function setupStyleTuner() {
 				const panel = document.getElementById("styleTuner");
