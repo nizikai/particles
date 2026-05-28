@@ -561,17 +561,23 @@
 			let showPerfOverlay = SHOW_PERF_OVERLAY;
 			const logoMeshes = [];
 			const logoMaterials = [];
-			const perfState = {
-				lastFrameTime: performance.now(),
-				sampleMs: 0,
-				sampleFrames: 0,
-				totalMs: 0,
-				totalFrames: 0,
-				fps: 0,
-				qualityTier: "balanced",
-				qualitySettled: false,
-				particleCount: 0
-			};
+				const perfState = {
+					lastFrameTime: performance.now(),
+					sampleMs: 0,
+					sampleFrames: 0,
+					totalMs: 0,
+					totalFrames: 0,
+					fps: 0,
+					qualityTier: "balanced",
+					qualitySettled: false,
+					particleCount: 0
+				};
+				const runtimeFallbackState = {
+					lowFpsMs: 0,
+					applied: false
+				};
+				const RUNTIME_FALLBACK_FPS_THRESHOLD = 30;
+				const RUNTIME_FALLBACK_HOLD_MS = 2000;
 			const logoPose = {
 				px: -0.060,
 				py: 0.030,
@@ -1209,15 +1215,44 @@
 				}
 			}
 
-			function updatePerfHud(note) {
-				if (!perf || !showPerfOverlay) return;
-				const fpsText = perfState.fps > 0 ? perfState.fps.toFixed(0) : "--";
-				const dprText = renderer ? renderer.getPixelRatio().toFixed(2) : "--";
-				const particles = perfState.particleCount > 0 ? perfState.particleCount.toLocaleString() : "--";
-				const bloomText = ENABLE_BLOOM_PASS ? bloomScale.toFixed(2) : "off";
-				const suffix = note ? ` | ${note}` : "";
-				perf.textContent = `FPS ${fpsText} | DPR ${dprText} | cap ${pixelRatioCap.toFixed(2)} | bloom ${bloomText} | pts ${particles} | ${perfState.qualityTier}${suffix}`;
-			}
+				function updatePerfHud(note) {
+					if (!perf || !showPerfOverlay) return;
+					const fpsText = perfState.fps > 0 ? perfState.fps.toFixed(0) : "--";
+					const dprText = renderer ? renderer.getPixelRatio().toFixed(2) : "--";
+					const particles = perfState.particleCount > 0 ? perfState.particleCount.toLocaleString() : "--";
+					const bloomEnabledNow = Boolean(useComposer && bloomPass && bloomPass.enabled !== false);
+					const bloomText = bloomEnabledNow ? bloomScale.toFixed(2) : "off";
+					const suffix = note ? ` | ${note}` : "";
+					perf.textContent = `FPS ${fpsText} | DPR ${dprText} | cap ${pixelRatioCap.toFixed(2)} | bloom ${bloomText} | pts ${particles} | ${perfState.qualityTier}${suffix}`;
+				}
+
+				function applyRuntimeLowFpsFallback() {
+					if (runtimeFallbackState.applied) return;
+					runtimeFallbackState.applied = true;
+					perfState.qualityTier = "performance";
+					if (bloomPass) {
+						bloomPass.enabled = false;
+					}
+					styleState.coreAlphaScale = Math.max(0.2, styleState.coreAlphaScale * 0.72);
+					styleState.hazeAlphaScale = Math.max(0.0, styleState.hazeAlphaScale * 0.62);
+					styleState.maxSizeMul = Math.max(0.4, styleState.maxSizeMul * 0.82);
+					applyStyleState();
+					updatePerfHud("low-fps fallback");
+					console.log("Applied runtime low-FPS fallback: bloom off + reduced particle overdraw.");
+				}
+
+				function monitorRuntimeFallback(dt) {
+					if (!isTouch || runtimeFallbackState.applied) return;
+					if (perfState.fps <= 0) return;
+					if (perfState.fps < RUNTIME_FALLBACK_FPS_THRESHOLD) {
+						runtimeFallbackState.lowFpsMs += dt;
+					} else {
+						runtimeFallbackState.lowFpsMs = Math.max(0, runtimeFallbackState.lowFpsMs - dt * 1.5);
+					}
+					if (runtimeFallbackState.lowFpsMs >= RUNTIME_FALLBACK_HOLD_MS) {
+						applyRuntimeLowFpsFallback();
+					}
+				}
 
 			function updateCinematicResolution() {
 				if (!renderer || !cinematicPass || !cinematicPass.material?.uniforms?.u_resolution) return;
@@ -2253,16 +2288,17 @@
 				perfState.totalMs += dt;
 				perfState.totalFrames += 1;
 
-				if (perfState.sampleMs >= 500) {
-					perfState.fps = (perfState.sampleFrames * 1000) / Math.max(1, perfState.sampleMs);
-					perfState.sampleMs = 0;
-					perfState.sampleFrames = 0;
-					updatePerfHud();
-				}
+					if (perfState.sampleMs >= 500) {
+						perfState.fps = (perfState.sampleFrames * 1000) / Math.max(1, perfState.sampleMs);
+						perfState.sampleMs = 0;
+						perfState.sampleFrames = 0;
+						updatePerfHud();
+					}
 
-				settleAdaptiveQuality();
-				updateCursorState();
-				updateGyroCameraInput();
+					monitorRuntimeFallback(dt);
+					settleAdaptiveQuality();
+					updateCursorState();
+					updateGyroCameraInput();
 				const cursorVelX = THREE.MathUtils.clamp(pointerState.smoothVx * 26.0 + pointerState.vx * 0.35, -2.4, 2.4);
 				const cursorVelY = THREE.MathUtils.clamp(pointerState.smoothVy * 26.0 + pointerState.vy * 0.35, -2.4, 2.4);
 
@@ -2602,6 +2638,7 @@
 					bloomPass.strength  = styleState.bloomStrength;
 					bloomPass.radius    = styleState.bloomRadius;
 					bloomPass.threshold = styleState.bloomThreshold;
+					bloomPass.enabled = !runtimeFallbackState.applied;
 				}
 
 				gyroTiltRange = GYRO_BASE_TILT_RANGE / Math.max(0.01, styleState.gyroSensitivity);
