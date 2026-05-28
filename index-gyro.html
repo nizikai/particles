@@ -469,7 +469,7 @@
 				const POINT_SIZE_SCALE = tierConfig.pointSizeScale;
 				const SHAFT_COUNT = tierConfig.shaftCount;
 				const ENABLE_ATMOSPHERIC_SHAFTS = tierConfig.enableShafts;
-				const ENABLE_BLOOM_PASS = !isTouch;
+				const ENABLE_BLOOM_PASS = true; // Allow bloom on mobile + desktop; low-tier still skips via FORCE_SKIP_POSTPROCESSING
 				const FORCE_SKIP_POSTPROCESSING = !tierConfig.usePostprocessing;
 				const CURSOR_RADIUS = isTouch ? 0.48 : 0.46;
 				const CURSOR_STRENGTH = isTouch ? 1.0 : 0.94;
@@ -2324,11 +2324,14 @@
 				}
 			}
 
-			const styleState = {
-				// Exposure
-				toneMappingExposure: 1.97,
-				cinematicExposure: 1.15,
-				gamma: 0.86,
+				const styleState = {
+					// Exposure
+					toneMappingExposure: 1.77,
+					cinematicExposure: 1.64,
+					cinematicSaturation: 0.96,
+					cinematicSharpness: 0.22,
+					cinematicBlurStrength: 0.24,
+					gamma: 0.84,
 				// Particles
 				coreAlphaScale: 2.77,
 				hazeAlphaScale: 1.3,
@@ -2352,7 +2355,7 @@
 				// Obelisk material
 				obeliskColor: "#0f0900",
 				obeliskEmissive: "#0a0500",
-				obeliskEmissiveIntensity: 0.10,
+					obeliskEmissiveIntensity: 0.12,
 				obeliskMetalness: 1.0,
 				obeliskRoughness: 0.41,
 				obeliskClearcoat: 0.0,
@@ -2363,37 +2366,40 @@
 				gyroDamping: 0.85
 			};
 
-			const MOBILE_STYLE_OVERRIDES = {
-				toneMappingExposure: 2.47,
-				cinematicExposure: 1.66,
-				gamma: 0.9,
-				coreAlphaScale: 1.49,
-				hazeAlphaScale: 0.73,
-				maxSizeMul: 2.27,
-				auraStrength: 2.44,
-				fogDensity: 0,
-				tightGlowMix: 2.63,
-				streakGlowMix: 2,
-				glowSpread: 1.97,
-				glowThreshold: 0.18,
-				bloomStrength: 1.98,
-				bloomRadius: 1.11,
-				bloomThreshold: 0.68,
-				colorBright: "#cc8100",
-				glowColor: "#ff7b00",
-				colorDeep: "#331b00",
-				glowTint: "#ff7300",
-				obeliskColor: "#0f0900",
-				obeliskEmissive: "#0a0500",
-				obeliskEmissiveIntensity: 0.08,
-				obeliskMetalness: 1,
-				obeliskRoughness: 0.38,
-				obeliskClearcoat: 0,
-				gyroSensitivity: 1.5,
-				gyroInfluence: 1.8,
-				gyroSmoothing: 0.08,
-				gyroDamping: 0.85
-			};
+					const MOBILE_STYLE_OVERRIDES = {
+						toneMappingExposure: 2.14,
+						cinematicExposure: 2.06,
+						cinematicSaturation: 1.18,
+						cinematicSharpness: 0.18,
+						cinematicBlurStrength: 0.2,
+						gamma: 0.86,
+					coreAlphaScale: 5,
+					hazeAlphaScale: 3,
+					maxSizeMul: 3,
+					auraStrength: 0,
+					fogDensity: 0,
+					tightGlowMix: 2.27,
+					streakGlowMix: 2.34,
+					glowSpread: 0.2,
+					glowThreshold: 0,
+					bloomStrength: 2.14,
+					bloomRadius: 1.16,
+					bloomThreshold: 0.6,
+					colorBright: "#cc8100",
+					glowColor: "#ff7b00",
+					colorDeep: "#331b00",
+					glowTint: "#ff7300",
+					obeliskColor: "#0f0900",
+					obeliskEmissive: "#0a0500",
+					obeliskEmissiveIntensity: 0.01,
+					obeliskMetalness: 1,
+					obeliskRoughness: 0.35,
+					obeliskClearcoat: 0,
+					gyroSensitivity: 3,
+					gyroInfluence: 2,
+					gyroSmoothing: 0.1,
+					gyroDamping: 0.98
+				};
 
 			if (isMobileDevice) {
 				Object.assign(styleState, MOBILE_STYLE_OVERRIDES);
@@ -2406,14 +2412,15 @@
 				if (!panel || !body || !toggle) return;
 
 				const sections = [
-					{
-						title: "Exposure & Tone",
-						sliders: [
-							{ key: "toneMappingExposure", label: "Tone Map Expose",     min: 0.4, max: 3.0, step: 0.01 },
-							{ key: "cinematicExposure",   label: "Cinematic Expose",   min: 0.4, max: 2.5, step: 0.01 },
-							{ key: "gamma",               label: "Gamma (lower=brighter)", min: 0.5, max: 1.4, step: 0.01 }
-						]
-					},
+						{
+							title: "Exposure & Tone",
+							sliders: [
+								{ key: "toneMappingExposure", label: "Tone Map Expose",     min: 0.4, max: 3.0, step: 0.01 },
+								{ key: "cinematicExposure",   label: "Cinematic Expose",   min: 0.4, max: 2.5, step: 0.01 },
+								{ key: "cinematicSaturation", label: "Cinematic Saturate", min: 0.5, max: 1.8, step: 0.01 },
+								{ key: "gamma",               label: "Gamma (lower=brighter)", min: 0.5, max: 1.4, step: 0.01 }
+							]
+						},
 					{
 						title: "Particles",
 						sliders: [
@@ -2424,14 +2431,16 @@
 							{ key: "fogDensity",     label: "Fog Density",       min: 0.0, max: 0.05, step: 0.001 }
 						]
 					},
-					{
-						title: "Cinematic Glow",
-						sliders: [
-							{ key: "tightGlowMix",  label: "Tight Halo",       min: 0.0, max: 4.0, step: 0.01 },
-							{ key: "streakGlowMix", label: "Streak / Shafts",  min: 0.0, max: 4.0, step: 0.01 },
-							{ key: "glowSpread",    label: "Glow Spread",      min: 0.2, max: 4.0, step: 0.01 },
-							{ key: "glowThreshold", label: "Glow Threshold",   min: 0.0, max: 0.5, step: 0.01 }
-						]
+						{
+							title: "Cinematic Glow",
+							sliders: [
+								{ key: "cinematicSharpness",  label: "Post Sharpness",   min: 0.0, max: 0.6, step: 0.01 },
+								{ key: "cinematicBlurStrength", label: "Post Blur Strength", min: 0.0, max: 0.8, step: 0.01 },
+								{ key: "tightGlowMix",  label: "Tight Halo",       min: 0.0, max: 4.0, step: 0.01 },
+								{ key: "streakGlowMix", label: "Streak / Shafts",  min: 0.0, max: 4.0, step: 0.01 },
+								{ key: "glowSpread",    label: "Glow Spread",      min: 0.2, max: 4.0, step: 0.01 },
+								{ key: "glowThreshold", label: "Glow Threshold",   min: 0.0, max: 0.5, step: 0.01 }
+							]
 					},
 					{
 						title: "Bloom (UnrealBloomPass)",
@@ -2553,15 +2562,18 @@
 				applyStyleState();
 			}
 
-			function applyStyleState() {
-				if (renderer) renderer.toneMappingExposure = styleState.toneMappingExposure;
+				function applyStyleState() {
+					if (renderer) renderer.toneMappingExposure = styleState.toneMappingExposure;
 
-				if (cinematicPass?.material?.uniforms) {
-					const u = cinematicPass.material.uniforms;
-					u.u_exposure.value       = styleState.cinematicExposure;
-					u.u_gamma.value          = styleState.gamma;
-					u.u_tightGlowMix.value   = styleState.tightGlowMix;
-					u.u_streakGlowMix.value  = styleState.streakGlowMix;
+					if (cinematicPass?.material?.uniforms) {
+						const u = cinematicPass.material.uniforms;
+						u.u_exposure.value       = styleState.cinematicExposure;
+						u.u_saturation.value     = styleState.cinematicSaturation;
+						u.u_sharpness.value      = styleState.cinematicSharpness;
+						u.u_blurStrength.value   = styleState.cinematicBlurStrength;
+						u.u_gamma.value          = styleState.gamma;
+						u.u_tightGlowMix.value   = styleState.tightGlowMix;
+						u.u_streakGlowMix.value  = styleState.streakGlowMix;
 					u.u_glowSpread.value     = styleState.glowSpread;
 					u.u_glowThreshold.value  = styleState.glowThreshold;
 					u.u_glowTint.value.set(styleState.glowTint);
