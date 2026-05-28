@@ -157,8 +157,9 @@
 				right: 12px;
 				top: 12px;
 				width: 310px;
-				max-height: calc(100dvh - 24px);
-				overflow-y: auto;
+				max-height: 40dvh;
+				display: flex;
+				flex-direction: column;
 				padding: 12px 14px;
 				border: 1px solid #1f3346;
 				border-radius: 10px;
@@ -170,6 +171,10 @@
 			}
 
 			.style-tuner.collapsed .style-tuner-body { display: none; }
+			.style-tuner-body {
+				overflow-y: auto;
+				padding-right: 2px;
+			}
 
 			.style-tuner-header {
 				display: flex;
@@ -269,7 +274,7 @@
 			.style-tuner .copy-btn.copied { background: #4dffae; }
 
 			@media (orientation: portrait) and (max-width: 720px) {
-				.style-tuner { width: calc(100vw - 24px); right: 12px; left: 12px; }
+				.style-tuner { width: calc(100vw - 24px); right: 12px; left: 12px; max-height: 40dvh; }
 			}
 
 			</style>
@@ -473,9 +478,11 @@
 				const CURSOR_RELEASE_FALLOFF = isTouch ? 0.02 : 0.026;
 				const CURSOR_RECENTER_WHEN_IDLE = isTouch ? 0.32 : 0.28;
 				const CURSOR_VEL_DAMP = isTouch ? 0.88 : 0.9;
-				const GYRO_TILT_RANGE = (isIPhoneX ? 18 : 22) / 1.5; // 1.5x more tilt sensitivity (smaller range = larger response)
-				const GYRO_SMOOTHING = 0.08; // Reduced from 0.12 for smoother motion
-				const GYRO_INFLUENCE_MULTIPLIER = 1.8; // Amplify gyro effect
+				const GYRO_BASE_TILT_RANGE = isIPhoneX ? 18 : 22;
+				let gyroTiltRange = GYRO_BASE_TILT_RANGE / 1.5; // 1.5x more tilt sensitivity
+				let gyroSmoothing = 0.08;
+				let gyroInfluenceMultiplier = 1.8;
+				let gyroVelocityDamping = 0.85;
 				const FXAA_STRENGTH = isTouch ? 1.0 : 1.24;
 				const WOMP_VERTEX_WELD_TOLERANCE = 1e-4;
 				const SHOW_PERF_OVERLAY = false;
@@ -1468,8 +1475,8 @@
 					gyroState.baseGamma = gamma;
 				}
 
-				gyroState.targetX = THREE.MathUtils.clamp((gamma - gyroState.baseGamma) / GYRO_TILT_RANGE, -1, 1);
-				gyroState.targetY = THREE.MathUtils.clamp((gyroState.baseBeta - beta) / GYRO_TILT_RANGE, -1, 1);
+				gyroState.targetX = THREE.MathUtils.clamp((gamma - gyroState.baseGamma) / gyroTiltRange, -1, 1);
+				gyroState.targetY = THREE.MathUtils.clamp((gyroState.baseBeta - beta) / gyroTiltRange, -1, 1);
 				gyroState.enabled = true;
 				gyroState.hasReading = true;
 				gyroState.lastTs = performance.now();
@@ -1547,19 +1554,18 @@
 				if (!gyroState.enabled || !gyroState.hasReading) return;
 				
 				const isStale = performance.now() - gyroState.lastTs > 1200;
-				const targetX = isStale ? 0 : gyroState.targetX * GYRO_INFLUENCE_MULTIPLIER;
-				const targetY = isStale ? 0 : gyroState.targetY * GYRO_INFLUENCE_MULTIPLIER;
+				const targetX = isStale ? 0 : gyroState.targetX * gyroInfluenceMultiplier;
+				const targetY = isStale ? 0 : gyroState.targetY * gyroInfluenceMultiplier;
 				
 				// Primary smoothing layer
-				gyroState.x += (targetX - gyroState.x) * GYRO_SMOOTHING;
-				gyroState.y += (targetY - gyroState.y) * GYRO_SMOOTHING;
+				gyroState.x += (targetX - gyroState.x) * gyroSmoothing;
+				gyroState.y += (targetY - gyroState.y) * gyroSmoothing;
 				
 				// Secondary smoothing layer with velocity damping
-				const velocityDamping = 0.85;
 				gyroState.velocityX = (gyroState.x - gyroState.smoothX) * 0.15;
 				gyroState.velocityY = (gyroState.y - gyroState.smoothY) * 0.15;
-				gyroState.velocityX *= velocityDamping;
-				gyroState.velocityY *= velocityDamping;
+				gyroState.velocityX *= gyroVelocityDamping;
+				gyroState.velocityY *= gyroVelocityDamping;
 				
 				gyroState.smoothX += gyroState.velocityX;
 				gyroState.smoothY += gyroState.velocityY;
@@ -2349,7 +2355,12 @@
 				obeliskEmissiveIntensity: 0.10,
 				obeliskMetalness: 1.0,
 				obeliskRoughness: 0.41,
-				obeliskClearcoat: 0.0
+				obeliskClearcoat: 0.0,
+				// Gyro
+				gyroSensitivity: 1.5,
+				gyroInfluence: 1.8,
+				gyroSmoothing: 0.08,
+				gyroDamping: 0.85
 			};
 
 			const MOBILE_STYLE_OVERRIDES = {
@@ -2377,7 +2388,11 @@
 				obeliskEmissiveIntensity: 0.08,
 				obeliskMetalness: 1,
 				obeliskRoughness: 0.38,
-				obeliskClearcoat: 0
+				obeliskClearcoat: 0,
+				gyroSensitivity: 1.5,
+				gyroInfluence: 1.8,
+				gyroSmoothing: 0.08,
+				gyroDamping: 0.85
 			};
 
 			if (isMobileDevice) {
@@ -2446,6 +2461,15 @@
 						colors: [
 							{ key: "obeliskColor",    label: "Base Color" },
 							{ key: "obeliskEmissive", label: "Emissive Color" }
+						]
+					},
+					{
+						title: "Gyro Camera",
+						sliders: [
+							{ key: "gyroSensitivity", label: "Sensitivity", min: 0.4, max: 3.0, step: 0.01 },
+							{ key: "gyroInfluence",   label: "Influence",   min: 0.2, max: 3.0, step: 0.01 },
+							{ key: "gyroSmoothing",   label: "Smoothing",   min: 0.02, max: 0.3, step: 0.005 },
+							{ key: "gyroDamping",     label: "Damping",     min: 0.5, max: 0.98, step: 0.005 }
 						]
 					}
 				];
@@ -2567,6 +2591,11 @@
 					bloomPass.radius    = styleState.bloomRadius;
 					bloomPass.threshold = styleState.bloomThreshold;
 				}
+
+				gyroTiltRange = GYRO_BASE_TILT_RANGE / Math.max(0.01, styleState.gyroSensitivity);
+				gyroInfluenceMultiplier = Math.max(0, styleState.gyroInfluence);
+				gyroSmoothing = THREE.MathUtils.clamp(styleState.gyroSmoothing, 0.01, 1.0);
+				gyroVelocityDamping = THREE.MathUtils.clamp(styleState.gyroDamping, 0.0, 0.999);
 
 				if (logoMaterials && logoMaterials.length) {
 					logoMaterials.forEach((m) => {
