@@ -1,20 +1,27 @@
 # Project Journal
 
-## Current State (2026-05-28)
-- Active file: `index-gyro.html`.
-- Desktop and mobile use separate default profiles.
-- Bloom/post controls are exposed in Style Tuner.
+## Current State (2026-05-29)
+- Active file: `index-test.html`.
+- Stack overflow root cause fixed during GLB post-load processing.
 
-## Latest Changes
-- Mobile defaults: high-intensity preset applied in `MOBILE_STYLE_OVERRIDES` (desktop base unchanged).
-- Runtime mobile low-FPS fallback added:
-  - Trigger: FPS `< 30` for ~`2000ms` on touch devices.
-  - Action: disables bloom and reduces `coreAlphaScale`, `hazeAlphaScale`, `maxSizeMul`.
-  - One-way per session (`runtimeFallbackState.applied`) to prevent oscillation.
-- Low-tier devices still skip full postprocessing via `FORCE_SKIP_POSTPROCESSING`.
+## Latest Fix
+- Resolved recursive traversal/mutation bug:
+  - previous flow added edge-glow meshes while `model.traverse(...)` was running
+  - this caused repeated re-entry on newly attached meshes and `Maximum call stack size exceeded`
+- New flow:
+  - first collect source meshes in `modelMeshes`
+  - then apply material + attach glow in a separate loop
+- Timeout behavior remains:
+  - absolute timeout `25000ms`, inactivity `12000ms`
+  - fallback can be replaced by late GLB success
+
+## Existing Guards
+- Version-safe physical material builder for Three.js `0.128` compatibility.
+- Startup watchdog disables heavy postprocessing if first frames stall.
+- Runtime error hooks (`error`, `unhandledrejection`) + render-loop try/catch.
 
 ## Verification
-- Inline script parse check passes (`node vm.Script`).
+- Inline script parse check passes.
 
-## Next Check
-- Real-phone validation: confirm mobile startup look matches preset and fallback activates only under sustained low FPS.
+## Remaining Risk
+- CDN script latency can still delay overall startup.
