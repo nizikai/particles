@@ -1,1981 +1,1377 @@
 <!doctype html>
-<!doctype html>
 <html lang="en">
 <head>
 	<meta charset="UTF-8" />
 	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-	<title>Neon Obelisk Particle Sea</title>
+	<title>Scroll Rotate · Particle Scene</title>
 	<style>
-		* {
-			box-sizing: border-box;
-			margin: 0;
-			padding: 0;
+		* { box-sizing: border-box; margin: 0; padding: 0; }
+
+		:root {
+			--bg-top: #000000;
+			--bg-bottom: #0a0603;
+			--accent: #f6b32c;
+			--ink: #f5ead3;
 		}
 
-		html,
-		body {
+		html, body {
 			width: 100%;
-			height: 100%;
-			overflow: hidden;
-			background: linear-gradient(180deg, #000000 0%, #070100 38%, #170602 100%);
+			background: linear-gradient(180deg, var(--bg-top) 0%, #050302 45%, var(--bg-bottom) 100%);
+			color: var(--ink);
+			font-family: "Avenir Next", "Trebuchet MS", system-ui, sans-serif;
 		}
+
+		/* Tall scroll track — this is what we scrub the rotation against. */
+		.scroll-track { height: 500vh; }
 
 		#webgl {
 			position: fixed;
+			inset: 0;
+			width: 100vw;
+			height: 100vh;
+			display: block;
+			z-index: 1;
+			touch-action: pan-y;
+		}
+
+		/* Pinned overlay copy, bikebear-style. */
+		.overlay {
+			position: fixed;
+			inset: 0;
+			z-index: 2;
+			pointer-events: none;
+		}
+
+		.hero {
+			position: absolute;
+			top: 7vh;
 			left: 0;
 			right: 0;
-			top: 1.5dvh;
-			bottom: 0;
-			width: 100vw;
-			height: 98.5dvh;
-			display: block;
-			touch-action: none;
+			text-align: center;
 		}
 
-		.scene-copy {
-			position: fixed;
-			z-index: 10;
-			top: clamp(32px, 7vh, 96px);
-			left: clamp(24px, 5vw, 92px);
-			max-width: min(620px, calc(100vw - 48px));
-			color: #f7ead1;
-			pointer-events: none;
-			text-shadow: 0 0 28px rgb(255 145 38 / 0.16);
-		}
-
-		.scene-kicker {
-			display: block;
-			color: #d5822a;
-			font: 700 12px/1.2 "Avenir Next", "Trebuchet MS", sans-serif;
-			letter-spacing: 0.22em;
+		.hero .word {
+			position: absolute;
+			top: 0;
+			left: 0;
+			right: 0;
+			font: 800 clamp(64px, 17vw, 280px)/0.9 "Arial Black", Impact, sans-serif;
+			letter-spacing: -0.02em;
 			text-transform: uppercase;
+			color: #ffffff;
+			opacity: 0;
+			transform: translateY(28px);
+			transition: opacity 0.5s ease, transform 0.5s ease;
+			text-shadow: 0 0 60px rgb(246 179 44 / 0.18);
 		}
 
-		.scene-title {
-			margin-top: 10px;
-			max-width: 8.5em;
-			font: 500 clamp(46px, 6.4vw, 118px) / 0.9 Georgia, "Times New Roman", serif;
-			letter-spacing: 0;
+		.hero .word.is-active { opacity: 1; transform: translateY(0); }
+
+		.caption {
+			position: absolute;
+			right: clamp(20px, 5vw, 90px);
+			top: 42vh;
+			max-width: 22em;
+			text-align: left;
+			color: rgb(245 234 211 / 0.72);
+			font: 500 clamp(13px, 1vw, 16px)/1.55 inherit;
+			letter-spacing: 0.01em;
+			opacity: 0;
+			transition: opacity 0.6s ease;
 		}
 
-		.scene-subtitle {
-			margin-top: 18px;
-			max-width: 28em;
-			color: rgb(247 234 209 / 0.68);
-			font: 500 clamp(14px, 1.1vw, 18px) / 1.5 "Avenir Next", "Trebuchet MS", sans-serif;
-			letter-spacing: 0.02em;
-		}
+		.caption.is-active { opacity: 1; }
 
-		@media (orientation: portrait) and (max-width: 720px) {
-			#webgl {
-				top: 25dvh;
-				bottom: 0;
-				height: 75dvh;
-			}
-
-			.scene-copy {
-				top: max(24px, env(safe-area-inset-top));
-				left: 22px;
-				right: 22px;
-				max-width: none;
-				padding-top: clamp(12px, 3vh, 28px);
-			}
-
-			.scene-kicker {
-				font-size: 10px;
-			}
-
-			.scene-title {
-				margin-top: 8px;
-				font-size: clamp(36px, 12vw, 64px);
-			}
-
-			.scene-subtitle {
-				margin-top: 12px;
-				max-width: 20em;
-				font-size: 13px;
-				line-height: 1.42;
-			}
-		}
-
-		.support {
+		.scroll-hint {
 			position: fixed;
-			left: 12px;
-			right: 12px;
-			bottom: 12px;
-			padding: 10px 12px;
-			border: 1px solid #2b3d51;
+			left: 50%;
+			bottom: 26px;
+			transform: translateX(-50%);
+			z-index: 3;
+			color: rgb(245 234 211 / 0.6);
+			font: 600 11px/1 inherit;
+			letter-spacing: 0.28em;
+			text-transform: uppercase;
+			transition: opacity 0.4s ease;
+		}
+
+		.scroll-hint::after {
+			content: "";
+			display: block;
+			width: 1px;
+			height: 26px;
+			margin: 10px auto 0;
+			background: linear-gradient(180deg, var(--accent), transparent);
+			animation: nudge 1.8s ease-in-out infinite;
+		}
+
+		@keyframes nudge {
+			0%, 100% { opacity: 0.2; transform: translateY(-6px); }
+			50% { opacity: 1; transform: translateY(2px); }
+		}
+
+		.progress {
+			position: fixed;
+			left: 0; right: 0; top: 0;
+			height: 2px;
+			z-index: 4;
+			transform-origin: 0 50%;
+			transform: scaleX(0);
+			background: linear-gradient(90deg, var(--accent), #fff);
+		}
+
+		.notice {
+			position: fixed;
+			left: 50%;
+			top: 50%;
+			transform: translate(-50%, -50%);
+			z-index: 5;
+			padding: 14px 18px;
+			max-width: min(86vw, 460px);
+			border: 1px solid rgb(246 179 44 / 0.35);
 			border-radius: 10px;
-			background: rgb(8 12 18 / 0.88);
-			color: #c9d7e7;
-			font: 13px/1.4 "Segoe UI", sans-serif;
-		}
-
-		.support.hidden {
+			background: rgb(8 5 2 / 0.92);
+			color: var(--ink);
+			font: 13px/1.5 inherit;
+			text-align: center;
 			display: none;
 		}
 
-		.perf {
+		.notice.show { display: block; }
+		.notice code { color: var(--accent); }
+
+		/* --- control panel --- */
+		.panel {
 			position: fixed;
-			top: 12px;
-			right: 12px;
-			padding: 8px 10px;
-			border: 1px solid #1e3246;
-			border-radius: 8px;
-			background: rgb(5 10 16 / 0.8);
-			color: #9dc9ec;
-			font: 11px/1.3 "Segoe UI", sans-serif;
-			letter-spacing: 0.02em;
-			white-space: nowrap;
-			pointer-events: none;
+			top: 16px;
+			right: 16px;
+			z-index: 6;
+			width: 248px;
+			font: 11px/1.4 inherit;
+			color: var(--ink);
+			user-select: none;
 		}
 
-		.perf.hidden {
-			display: none;
+		.panel-toggle {
+			width: 100%;
+			padding: 9px 12px;
+			border: 1px solid rgb(246 179 44 / 0.4);
+			border-radius: 9px;
+			background: rgb(10 6 2 / 0.82);
+			color: var(--accent);
+			font: 600 11px/1 inherit;
+			letter-spacing: 0.16em;
+			text-transform: uppercase;
+			cursor: pointer;
+			backdrop-filter: blur(6px);
 		}
 
-		.tuner {
-			position: fixed;
-			left: 12px;
-			top: 12px;
-			max-width: min(92vw, 580px);
-			padding: 10px 12px;
-			border: 1px solid #1f3346;
-			border-radius: 8px;
-			background: rgb(5 10 16 / 0.84);
-			color: #95bedf;
-			font: 11px/1.4 "Segoe UI", sans-serif;
-			letter-spacing: 0.02em;
-			white-space: pre-line;
+		.panel-body {
+			margin-top: 8px;
+			padding: 14px 14px 6px;
+			border: 1px solid rgb(246 179 44 / 0.22);
+			border-radius: 10px;
+			background: rgb(8 5 2 / 0.86);
+			backdrop-filter: blur(8px);
+			max-height: calc(100vh - 80px);
+			overflow-y: auto;
 		}
 
-		.tuner.hidden {
-			display: none;
+		.panel.collapsed .panel-body { display: none; }
+
+		.ctrl { margin-bottom: 14px; }
+
+		.ctrl label {
+			display: flex;
+			justify-content: space-between;
+			margin-bottom: 6px;
+			color: rgb(245 234 211 / 0.78);
+			letter-spacing: 0.04em;
+		}
+
+		.ctrl label .val { color: var(--accent); font-variant-numeric: tabular-nums; }
+
+		.ctrl input[type="file"] { width: 100%; font: 11px/1.3 inherit; color: rgb(245 234 211 / 0.7); cursor: pointer; }
+		.ctrl input[type="file"]::file-selector-button {
+			margin-right: 8px;
+			padding: 6px 10px;
+			border: 1px solid rgb(246 179 44 / 0.4);
+			border-radius: 7px;
+			background: rgb(246 179 44 / 0.12);
+			color: var(--accent);
+			font: 600 10px/1 inherit;
+			letter-spacing: 0.1em;
+			text-transform: uppercase;
+			cursor: pointer;
+		}
+		.ctrl input[type="file"]::file-selector-button:hover { background: rgb(246 179 44 / 0.22); }
+		.upload-ctrl { padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px solid rgb(246 179 44 / 0.18); }
+		.upload-ctrl .hint { color: rgb(245 234 211 / 0.4); font-size: 10px; margin-top: 6px; }
+
+		.copy-btn {
+			width: 100%;
+			margin: 2px 0 8px;
+			padding: 9px 12px;
+			border: 1px solid rgb(246 179 44 / 0.5);
+			border-radius: 9px;
+			background: rgb(246 179 44 / 0.14);
+			color: var(--accent);
+			font: 600 11px/1 inherit;
+			letter-spacing: 0.16em;
+			text-transform: uppercase;
+			cursor: pointer;
+		}
+		.copy-btn:hover { background: rgb(246 179 44 / 0.24); }
+
+		.ctrl input[type="range"] {
+			-webkit-appearance: none;
+			appearance: none;
+			width: 100%;
+			height: 3px;
+			border-radius: 3px;
+			background: rgb(246 179 44 / 0.25);
+			outline: none;
+			cursor: pointer;
+		}
+
+		.ctrl input[type="range"]::-webkit-slider-thumb {
+			-webkit-appearance: none;
+			appearance: none;
+			width: 14px;
+			height: 14px;
+			border-radius: 50%;
+			background: var(--accent);
+			box-shadow: 0 0 8px rgb(246 179 44 / 0.7);
+		}
+
+		.ctrl input[type="range"]::-moz-range-thumb {
+			width: 14px;
+			height: 14px;
+			border: none;
+			border-radius: 50%;
+			background: var(--accent);
+			box-shadow: 0 0 8px rgb(246 179 44 / 0.7);
 		}
 	</style>
 </head>
 <body>
-	<canvas id="webgl" aria-label="Golden particle ocean scene"></canvas>
-	<header class="scene-copy" aria-label="Scene title">
-		<span class="scene-kicker">Nizikai</span>
-		<h1 class="scene-title">Neon Obelisk</h1>
-		<p class="scene-subtitle">Particle Sea</p>
-	</header>
-	<div id="support" class="support hidden"></div>
-	<div id="perf" class="perf"></div>
-	<div id="tuner" class="tuner hidden"></div>
+	<canvas id="webgl"></canvas>
 
-	<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
-	<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
-	<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/Pass.js"></script>
-	<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
-	<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
-	<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
-	<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
-	<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/FXAAShader.js"></script>
-	<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/BufferGeometryUtils.js"></script>
-	<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
-	<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
-	<script>
-		(() => {
-			const canvas = document.getElementById("webgl");
-			const support = document.getElementById("support");
-			const perf = document.getElementById("perf");
-			const tuner = document.getElementById("tuner");
-			const isTouch = window.matchMedia("(pointer: coarse)").matches;
-			const ua = navigator.userAgent || "";
-			const isIOS = /iPad|iPhone|iPod/.test(ua);
-			const isAndroid = /Android/.test(ua);
-			const shortSide = Math.min(window.screen.width, window.screen.height);
-			const longSide = Math.max(window.screen.width, window.screen.height);
-			const isIPhoneX = /iPhone/.test(ua) && shortSide === 375 && longSide === 812 && window.devicePixelRatio >= 2.8;
-			const isLowSpecMobile = isTouch && (isIOS || isAndroid);
-			const desktopCores = navigator.hardwareConcurrency || 8;
-			
-			// Enhanced device capability detection
-			function detectDeviceCapability() {
-				const memory = navigator.deviceMemory || 4; // GB, defaults to 4 if unavailable
-				const cores = navigator.hardwareConcurrency || 4;
-				const isMobile = isTouch;
-				
-				// Check for known low-end devices
-				const isOldIOS = isIOS && /OS [89]_/.test(ua); // iOS 8-9
-				const isOldAndroid = isAndroid && /Android [45]\./.test(ua); // Android 4-5
-				
-				// Scoring system: lower = weaker device
-				let score = 0;
-				if (memory >= 8) score += 3;
-				else if (memory >= 4) score += 2;
-				else if (memory >= 2) score += 1;
-				
-				if (cores >= 8) score += 3;
-				else if (cores >= 4) score += 2;
-				else if (cores >= 2) score += 1;
-				
-				if (!isMobile) score += 2;
-				if (isOldIOS || isOldAndroid) score -= 2;
-				
-				// Classify device tier
-				if (score >= 7) return 'high';
-				if (score >= 4) return 'medium';
-				return 'low';
+	<div class="progress" id="progress"></div>
+	<div class="notice" id="notice"></div>
+
+	<div class="panel" id="panel">
+		<button class="panel-toggle" id="panelToggle">Controls</button>
+		<div class="panel-body">
+			<div class="ctrl upload-ctrl">
+				<label>Ground model</label>
+				<input type="file" id="upload" accept=".glb,.gltf" />
+				<div class="hint">Pick or drop a .glb/.gltf to replace the ground (bottom). The glass logo stays.</div>
+			</div>
+			<div class="ctrl">
+				<label>Particles <span class="val" id="v-count">1500</span></label>
+				<input type="range" id="s-count" min="300" max="9000" step="100" value="1500" />
+			</div>
+			<div class="ctrl">
+				<label>Glow speed <span class="val" id="v-glow">0.30×</span></label>
+				<input type="range" id="s-glow" min="0" max="4" step="0.05" value="0.3" />
+			</div>
+			<div class="ctrl">
+				<label>Flake size <span class="val" id="v-size">20</span></label>
+				<input type="range" id="s-size" min="8" max="90" step="1" value="20" />
+			</div>
+			<div class="ctrl">
+				<label>Model size <span class="val" id="v-scale">1.5</span></label>
+				<input type="range" id="s-scale" min="0" max="9" step="0.1" value="1.5" />
+			</div>
+			<div class="ctrl">
+				<label>Camera dist <span class="val" id="v-cam">6.0</span></label>
+				<input type="range" id="s-cam" min="3" max="12" step="0.1" value="6" />
+			</div>
+			<div class="ctrl">
+				<label>Depth <span class="val" id="v-depth">1.00</span></label>
+				<input type="range" id="s-depth" min="0.1" max="1" step="0.05" value="1" />
+			</div>
+			<div class="ctrl">
+				<label>Rotation / scroll <span class="val" id="v-rot">-2.0</span></label>
+				<input type="range" id="s-rot" min="-12" max="12" step="0.5" value="-2" />
+			</div>
+			<div class="ctrl">
+				<label>Ground X <span class="val" id="v-gx">1.0</span></label>
+				<input type="range" id="s-gx" min="-15" max="15" step="0.1" value="1" />
+			</div>
+			<div class="ctrl">
+				<label>Ground Y <span class="val" id="v-gy">0.2</span></label>
+				<input type="range" id="s-gy" min="-15" max="15" step="0.1" value="0.2" />
+			</div>
+			<div class="ctrl">
+				<label>Ground Z <span class="val" id="v-gz">-9.0</span></label>
+				<input type="range" id="s-gz" min="-15" max="15" step="0.1" value="-9" />
+			</div>
+			<div class="ctrl">
+				<label>Ground size <span class="val" id="v-gscale">1.00</span></label>
+				<input type="range" id="s-gscale" min="0.2" max="3" step="0.05" value="1.0" />
+			</div>
+			<div class="ctrl">
+				<label>Ground spin <span class="val" id="v-gturns">-2.0</span></label>
+				<input type="range" id="s-gturns" min="-12" max="12" step="0.5" value="-2" />
+			</div>
+			<div class="ctrl">
+				<label>Sky spin <span class="val" id="v-sky">-2.5</span></label>
+				<input type="range" id="s-sky" min="-4" max="4" step="0.1" value="-2.5" />
+			</div>
+			<div class="ctrl">
+				<label>Sky drift <span class="val" id="v-skydrift">0.02</span></label>
+				<input type="range" id="s-skydrift" min="0" max="0.3" step="0.01" value="0.02" />
+			</div>
+			<div class="ctrl">
+				<label>Haze <span class="val" id="v-haze">0.05</span></label>
+				<input type="range" id="s-haze" min="0" max="1" step="0.05" value="0.05" />
+			</div>
+			<div class="ctrl">
+				<label>Bloom <span class="val" id="v-bloom">0.70</span></label>
+				<input type="range" id="s-bloom" min="0" max="3" step="0.05" value="0.7" />
+			</div>
+			<div class="ctrl">
+				<label>Depth of field <span class="val" id="v-dof">0.60</span></label>
+				<input type="range" id="s-dof" min="0" max="2" step="0.05" value="0.6" />
+			</div>
+			<div class="ctrl">
+				<label>God rays <span class="val" id="v-godrays">0.40</span></label>
+				<input type="range" id="s-godrays" min="0" max="2" step="0.05" value="0.4" />
+			</div>
+			<div class="ctrl">
+				<label>Grain <span class="val" id="v-grain">0.03</span></label>
+				<input type="range" id="s-grain" min="0" max="0.4" step="0.01" value="0.03" />
+			</div>
+			<div class="ctrl">
+				<label>Debris <span class="val" id="v-debris">18</span></label>
+				<input type="range" id="s-debris" min="0" max="60" step="1" value="18" />
+			</div>
+			<div class="ctrl">
+				<label>Light beam <span class="val" id="v-beam">0.60</span></label>
+				<input type="range" id="s-beam" min="0" max="2" step="0.05" value="0.6" />
+			</div>
+			<div class="ctrl">
+				<label>Sparkle <span class="val" id="v-sparkle">1.00</span></label>
+				<input type="range" id="s-sparkle" min="0" max="3" step="0.05" value="1" />
+			</div>
+			<div class="ctrl">
+				<label>Terrain height <span class="val" id="v-terrain">1.00</span></label>
+				<input type="range" id="s-terrain" min="0" max="2" step="0.05" value="1" />
+			</div>
+			<div class="ctrl">
+				<label>Fog <span class="val" id="v-fog">0.012</span></label>
+				<input type="range" id="s-fog" min="0" max="0.05" step="0.001" value="0.012" />
+			</div>
+			<div class="ctrl">
+				<label>Saturation <span class="val" id="v-sat">0.65</span></label>
+				<input type="range" id="s-sat" min="0" max="1" step="0.05" value="0.65" />
+			</div>
+			<button class="copy-btn" id="copyBtn">Copy settings</button>
+		</div>
+	</div>
+
+	<div class="scroll-track"></div>
+
+	<!--
+		Three.js r169 (ES modules). r163+ is required for MeshPhysicalMaterial
+		`dispersion` (the rainbow chromatic fringing on the glass bevels).
+	-->
+	<script type="importmap">
+	{
+		"imports": {
+			"three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+			"three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+		}
+	}
+	</script>
+	<script type="module">
+	import * as THREE from "three";
+	import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+	import { MeshTransmissionMaterial, DiscardMaterial } from "./MeshTransmissionMaterial.js";
+	import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+	import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+	import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+	import { BokehPass } from "three/addons/postprocessing/BokehPass.js";
+	import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
+	import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
+
+	(() => {
+		const canvas = document.getElementById("webgl");
+		const noticeEl = document.getElementById("notice");
+		const progressEl = document.getElementById("progress");
+
+		// --- scroll state -------------------------------------------------
+		let scrollProgress = 0;     // 0..1 raw from scrollbar
+		let easedProgress = 0;      // smoothed, drives rotation
+		const pointer = { x: 0, y: 0, tx: 0, ty: 0 };
+
+		// --- live-tunable config (driven by the control panel) ------------
+		const config = {
+			particleCount: 1500,
+			particleSize: 20,       // base point size in px
+			glowSpeed: 0.3,         // flake flutter + glint speed multiplier
+			modelScale: 1.5,        // target size of the model
+			depthScale: 1,          // Z-depth multiplier: 1.0 = true scene.glb depth, <1 = slimmer slabs (art override)
+			rotationTurns: -2,      // turns over a full scroll (negative reverses)
+			groundX: 1,             // ground position offset (x)
+			groundY: 0.2,           // ground position offset (y)
+			groundZ: -9,            // ground position offset (z)
+			groundScale: 1,         // ground size multiplier (on top of auto-fit)
+			groundTurns: -2,        // ground turns over a full scroll
+			skyTurns: -2.5,         // sky/environment turns over a full scroll (the glow sweeps through view)
+			skyDrift: 0.02,         // constant sky drift (radians/sec) — keeps moving even when not scrolling
+			haze: 0.05,             // warm low haze opacity (0 = off)
+			cameraDist: 6,          // camera distance — lower = bigger scene in frame
+			bloom: 0.7,             // bloom strength (glow off bright areas)
+			dof: 0.6,               // depth-of-field amount (0 = off)
+			godrays: 0.4,           // volumetric light-shaft strength (0 = off)
+			grain: 0.03,            // film grain + dither amount (also kills banding)
+			debris: 18,             // number of floating rock chunks
+			beam: 0.6,              // light-shaft beam intensity (0 = off)
+			sparkle: 1.0,           // sparkle burst intensity at the focal point
+			terrain: 1.0,           // crater terrain height multiplier (0 = flat)
+			fog: 0.012,             // exponential fog density (crater depth)
+			saturation: 0.65,       // color grade: 1 = full color, 0 = monochrome (cold)
+			figure: true            // show the lone figure in the basin
+		};
+		let flakeTime = 0;          // accumulated time scaled by glowSpeed
+
+		function readScroll() {
+			const max = document.documentElement.scrollHeight - window.innerHeight;
+			scrollProgress = max > 0 ? Math.min(1, Math.max(0, window.scrollY / max)) : 0;
+		}
+
+		// --- renderer / scene --------------------------------------------
+		const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+		renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+		renderer.setSize(window.innerWidth, window.innerHeight);
+		renderer.outputColorSpace = THREE.SRGBColorSpace;
+		renderer.toneMapping = THREE.ACESFilmicToneMapping;
+		renderer.toneMappingExposure = 1.05;
+
+		const scene = new THREE.Scene();
+		// Exponential fog for crater depth (cool, near-monochrome). Tunable via Fog slider.
+		scene.fog = new THREE.FogExp2(0x0b0e14, 0.012);
+
+		const camera = new THREE.PerspectiveCamera(35, window.innerWidth / window.innerHeight, 0.1, 100);
+		camera.position.set(0, 0.3, config.cameraDist);   // slight downward tilt (like glass-reference) so the warm env gradient fills the frame
+		camera.lookAt(0, 0, 0);
+
+		// --- procedural high-contrast environment: dark + one warm glow ----
+		// A high-contrast env (mostly dark with a single concentrated warm
+		// glow) is what makes transmission glass read as crystal — dark
+		// surroundings, razor-bright bevel highlights, and a warm refracted
+		// core. Used both for reflections (PMREM) and as the refracted
+		// background (equirect). Lifted from glass-reference.html.
+		function makeEnvTexture() {
+			const cv = document.createElement("canvas"); cv.width = 1024; cv.height = 512;
+			const x = cv.getContext("2d");
+			const g = x.createLinearGradient(0, 0, 0, 512);
+			g.addColorStop(0.00, "#000000"); g.addColorStop(0.55, "#1a0c03");
+			g.addColorStop(0.78, "#4d1f02"); g.addColorStop(1.00, "#0a0502");
+			x.fillStyle = g; x.fillRect(0, 0, 1024, 512);
+			const r = x.createRadialGradient(512, 330, 0, 512, 330, 240);
+			r.addColorStop(0.00, "#fff4e0"); r.addColorStop(0.25, "#ffb24d");
+			r.addColorStop(0.60, "#7a3a05"); r.addColorStop(1.00, "rgba(0,0,0,0)");
+			x.fillStyle = r; x.fillRect(0, 0, 1024, 512);
+			const tex = new THREE.CanvasTexture(cv);
+			tex.mapping = THREE.EquirectangularReflectionMapping;
+			tex.colorSpace = THREE.SRGBColorSpace;
+			return tex;
+		}
+		const equirect = makeEnvTexture();
+		const pmrem = new THREE.PMREMGenerator(renderer);
+		scene.environment = pmrem.fromEquirectangular(equirect).texture;
+		scene.background = equirect;
+		pmrem.dispose();
+
+		// To use a real .hdr instead, import { RGBELoader } and load it here,
+		// then assign hdr to scene.environment (via PMREM) and scene.background.
+
+		// --- warm low haze ------------------------------------------------
+		// A soft warm gradient band sitting low behind the logo → hazy
+		// atmosphere over the ground/horizon (the glass refracts it too).
+		// Additive so it glows over the dark surroundings; tuned by the Haze slider.
+		function makeHazeTexture() {
+			const s = 256;
+			const c = document.createElement("canvas"); c.width = s; c.height = s;
+			const x = c.getContext("2d");
+			// Soft warm plume concentrated at the horizon, fading out in every
+			// direction → billowy mist like the reference (not a flat band).
+			const g = x.createRadialGradient(s*0.5, s*0.58, 0, s*0.5, s*0.58, s*0.5);
+			g.addColorStop(0.00, "rgba(255,170,90,0.95)");
+			g.addColorStop(0.30, "rgba(255,135,55,0.55)");
+			g.addColorStop(0.65, "rgba(190,85,30,0.18)");
+			g.addColorStop(1.00, "rgba(120,50,15,0)");
+			x.fillStyle = g; x.fillRect(0, 0, s, s);
+			const t = new THREE.CanvasTexture(c);
+			t.colorSpace = THREE.SRGBColorSpace;
+			return t;
+		}
+		const hazeMat = new THREE.MeshBasicMaterial({
+			map: makeHazeTexture(),
+			transparent: true,
+			depthWrite: false,
+			blending: THREE.AdditiveBlending,
+			opacity: config.haze
+		});
+		const haze = new THREE.Mesh(new THREE.PlaneGeometry(34, 20), hazeMat);
+		haze.position.set(0, -1.3, -3);   // glow sits at the horizon, behind the floating logo
+		scene.add(haze);
+
+		// --- drifting volumetric mist -------------------------------------
+		// A few big soft additive billboards low in the scene that slowly drift
+		// and breathe → rolling ground mist (cheap fake volumetrics).
+		const mistTex = makeHazeTexture();
+		const mistGroup = new THREE.Group();
+		const mistLayers = [];
+		for (let i = 0; i < 5; i++) {
+			const m = new THREE.Mesh(
+				new THREE.PlaneGeometry(26, 12),
+				new THREE.MeshBasicMaterial({ map: mistTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.06 })
+			);
+			m.position.set((Math.random() - 0.5) * 14, -2.4 + Math.random() * 1.2, -2 - Math.random() * 5);
+			m.userData.seed = Math.random() * 6.28;
+			m.userData.baseX = m.position.x;
+			mistGroup.add(m); mistLayers.push(m);
+		}
+		scene.add(mistGroup);
+
+		// --- floating rock debris -----------------------------------------
+		// Slow-tumbling dark chunks drifting around the logo for scale + life.
+		const debrisGeo = new THREE.IcosahedronGeometry(1, 0);   // faceted low-poly rock
+		const debrisMat = new THREE.MeshStandardMaterial({ color: 0x2a2018, roughness: 1, metalness: 0, flatShading: true, envMapIntensity: 0.5 });
+		const DEBRIS_MAX = 60;
+		const debris = new THREE.InstancedMesh(debrisGeo, debrisMat, DEBRIS_MAX);
+		const debrisData = [];
+		const _m4 = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _v = new THREE.Vector3(), _s = new THREE.Vector3();
+		for (let i = 0; i < DEBRIS_MAX; i++) {
+			const r = 2.5 + Math.random() * 6;
+			const th = Math.random() * 6.28, ph = Math.acos(2 * Math.random() - 1);
+			debrisData.push({
+				pos: new THREE.Vector3(r * Math.sin(ph) * Math.cos(th), (r * Math.cos(ph)) * 0.6, r * Math.sin(ph) * Math.sin(th)),
+				rot: new THREE.Euler(Math.random() * 6.28, Math.random() * 6.28, Math.random() * 6.28),
+				spin: new THREE.Vector3((Math.random() - 0.5) * 0.4, (Math.random() - 0.5) * 0.4, (Math.random() - 0.5) * 0.4),
+				scale: 0.04 + Math.random() * 0.13,
+				drift: 0.1 + Math.random() * 0.2
+			});
+		}
+		scene.add(debris);
+		function updateDebris(t) {
+			const n = Math.min(config.debris, DEBRIS_MAX);
+			debris.count = n;
+			for (let i = 0; i < n; i++) {
+				const d = debrisData[i];
+				_v.copy(d.pos); _v.y += Math.sin(t * d.drift + d.pos.x) * 0.4;
+				_e.set(d.rot.x + t * d.spin.x, d.rot.y + t * d.spin.y, d.rot.z + t * d.spin.z);
+				_q.setFromEuler(_e);
+				_s.setScalar(d.scale);
+				_m4.compose(_v, _q, _s);
+				debris.setMatrixAt(i, _m4);
 			}
-			
-			const deviceTier = detectDeviceCapability();
-			const DESKTOP_SCENE_TOP_RATIO = 0.015;
-			const MOBILE_SCENE_TOP_RATIO = 0.25;
+			debris.instanceMatrix.needsUpdate = true;
+		}
 
-			function getViewportSize() {
-				const visualViewport = window.visualViewport;
-				return {
-					width: Math.max(1, Math.round(visualViewport?.width || window.innerWidth)),
-					height: Math.max(1, Math.round(visualViewport?.height || window.innerHeight))
-				};
+		// --- light shaft + sparkle burst (Lusion-style) -------------------
+		// A soft vertical light beam onto the logo, and a dense cluster of bright
+		// twinkling sparkles at the focal point (both bloom strongly).
+		function softRadialTex() {
+			const s = 128, c = document.createElement("canvas"); c.width = c.height = s;
+			const x = c.getContext("2d");
+			const g = x.createRadialGradient(s/2, s/2, 0, s/2, s/2, s/2);
+			g.addColorStop(0.00, "rgba(255,255,255,1)");
+			g.addColorStop(0.25, "rgba(245,240,255,0.45)");
+			g.addColorStop(0.60, "rgba(235,238,255,0.10)");
+			g.addColorStop(1.00, "rgba(235,238,255,0)");
+			x.fillStyle = g; x.fillRect(0, 0, s, s);
+			const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+		}
+		const beamMat = new THREE.SpriteMaterial({
+			map: softRadialTex(), transparent: true, depthWrite: false, depthTest: false,
+			blending: THREE.AdditiveBlending, opacity: config.beam, color: 0xfff0e0
+		});
+		const beam = new THREE.Sprite(beamMat);
+		beam.scale.set(3.2, 17, 1);   // tall thin shaft; rotated toward the sun each frame
+		scene.add(beam);
+
+		// sparkle burst — dense twinkling points around the focal point
+		const sparkleGeo = new THREE.BufferGeometry();
+		{
+			const N = 500, pos = new Float32Array(N * 3), seed = new Float32Array(N);
+			for (let i = 0; i < N; i++) {
+				const r = Math.pow(Math.random(), 0.6) * 1.7;
+				const th = Math.random() * 6.28, ph = Math.acos(2 * Math.random() - 1);
+				pos[i*3] = r * Math.sin(ph) * Math.cos(th);
+				pos[i*3+1] = r * Math.cos(ph) * 1.5;   // taller cluster (rises up the beam)
+				pos[i*3+2] = r * Math.sin(ph) * Math.sin(th);
+				seed[i] = Math.random();
 			}
+			sparkleGeo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+			sparkleGeo.setAttribute("aSeed", new THREE.BufferAttribute(seed, 1));
+		}
+		const sparkleMat = new THREE.ShaderMaterial({
+			transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+			uniforms: {
+				u_time: { value: 0 },
+				u_size: { value: 26 * renderer.getPixelRatio() },
+				u_amp: { value: config.sparkle }
+			},
+			vertexShader: `
+				uniform float u_time, u_size, u_amp; attribute float aSeed; varying float vTw;
+				void main() {
+					vec3 p = position;
+					p.y += mod(u_time * 0.12 * (0.5 + aSeed) + aSeed * 4.0, 3.4) - 1.4;  // slow rise
+					vec4 mv = modelViewMatrix * vec4(p, 1.0);
+					float tw = pow(0.5 + 0.5 * sin(u_time * (3.0 + aSeed * 9.0) + aSeed * 40.0), 6.0);
+					vTw = tw;
+					gl_Position = projectionMatrix * mv;
+					gl_PointSize = u_size * u_amp * (0.25 + tw) / max(1.0, -mv.z);
+				}`,
+			fragmentShader: `
+				varying float vTw;
+				void main() {
+					vec2 uv = gl_PointCoord - 0.5; float d = dot(uv, uv);
+					float core = exp(-d * 42.0); if (core < 0.02) discard;
+					vec3 col = mix(vec3(1.0, 0.86, 0.62), vec3(1.0), vTw);
+					gl_FragColor = vec4(col, core * (0.35 + vTw));
+				}`
+		});
+		const sparkles = new THREE.Points(sparkleGeo, sparkleMat);
+		scene.add(sparkles);
 
-			function isPortraitViewport() {
-				const viewport = getViewportSize();
-				return viewport.height > viewport.width;
+		// --- crater terrain (FBM-displaced) -------------------------------
+		// A high-subdivision plane displaced by fractal value noise: center dips
+		// into a bowl, edges rise into jagged ridges. Vertex-coloured (snowy
+		// basin → dark rock) so no textures are needed; cool-toned for the
+		// near-monochrome look. Terrain height is tunable (config.terrain).
+		function hash2(x, y) { const s = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return s - Math.floor(s); }
+		function vnoise(x, y) {
+			const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi;
+			const tl = hash2(xi, yi), tr = hash2(xi + 1, yi), bl = hash2(xi, yi + 1), br = hash2(xi + 1, yi + 1);
+			const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+			return tl * (1 - u) * (1 - v) + tr * u * (1 - v) + bl * (1 - u) * v + br * u * v;
+		}
+		function fbm(x, y) { let a = 0, amp = 0.5, f = 1; for (let i = 0; i < 5; i++) { a += amp * vnoise(x * f, y * f); f *= 2; amp *= 0.5; } return a; }
+
+		const TERR_SIZE = 240, TERR_SEG = 200, TERR_R = TERR_SIZE * 0.5;
+		const terrainGeo = new THREE.PlaneGeometry(TERR_SIZE, TERR_SIZE, TERR_SEG, TERR_SEG);
+		terrainGeo.rotateX(-Math.PI / 2);   // lay flat on XZ, +Y up
+		const terrBase = new Float32Array(terrainGeo.attributes.position.count);   // unscaled heights
+		{
+			const pos = terrainGeo.attributes.position;
+			const colors = new Float32Array(pos.count * 3);
+			const snow = new THREE.Color(0x96a6b5), rock = new THREE.Color(0x202329);
+			const c = new THREE.Color();
+			for (let i = 0; i < pos.count; i++) {
+				const x = pos.getX(i), z = pos.getZ(i);
+				const nr = Math.min(1, Math.sqrt(x * x + z * z) / TERR_R);
+				const bowl = THREE.MathUtils.smoothstep(nr, 0.12, 1.0) * 20;        // edges rise
+				const edge = THREE.MathUtils.smoothstep(nr, 0.22, 0.95);
+				const ridge = Math.pow(fbm(x * 0.035 + 50, z * 0.035 + 50), 1.3) * 30 * edge;
+				const fine = fbm(x * 0.18, z * 0.18) * 1.4;
+				const dip = -2.5 * (1 - nr);                                        // basin floor slightly lower
+				terrBase[i] = bowl + ridge + fine + dip;
+				const tt = THREE.MathUtils.smoothstep(terrBase[i], 1.0, 16.0);      // basin=snow, ridge=rock
+				c.copy(snow).lerp(rock, tt);
+				colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;
 			}
+			terrainGeo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+		}
+		const terrain = new THREE.Mesh(
+			terrainGeo,
+			new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0.0 })
+		);
+		terrain.position.y = -6;            // basin sits below the floating logo
+		scene.add(terrain);
+		function applyTerrain() {
+			const pos = terrainGeo.attributes.position;
+			for (let i = 0; i < pos.count; i++) pos.setY(i, terrBase[i] * config.terrain);
+			pos.needsUpdate = true;
+			terrainGeo.computeVertexNormals();
+		}
+		applyTerrain();
 
-			function isMobilePortraitViewport() {
-				const viewport = getViewportSize();
-				return viewport.height > viewport.width && viewport.width <= 720;
+		// --- the lone figure ----------------------------------------------
+		// Placeholder astronaut: a capsule standing in the basin, rim-lit so it
+		// reads as a bright silhouette under the beam. Swap for a GLB later.
+		const figure = new THREE.Mesh(
+			new THREE.CapsuleGeometry(0.7, 1.6, 6, 12),
+			new THREE.MeshStandardMaterial({ color: 0xaab4be, roughness: 0.6, metalness: 0.1 })
+		);
+		figure.position.set(0, -4.4, 0);   // standing on the basin floor below the logo
+		scene.add(figure);
+
+		// --- key light for the crater (terrain + figure) ------------------
+		// One bright cool key high above centre → lights the basin floor and
+		// rim-lights the figure. The glass logo still reads via the environment.
+		const keyLight = new THREE.DirectionalLight(0xdfeaff, 2.4);
+		keyLight.position.set(0, 60, 6);
+		scene.add(keyLight);
+		scene.add(new THREE.AmbientLight(0x2a3340, 0.5));   // cool fill
+
+		// --- lighting -----------------------------------------------------
+		// Like glass-reference.html: NO discrete lights. The glass is lit
+		// entirely by scene.environment (the dark + single-warm-glow PMREM env),
+		// which gives the clean crystal look — dark surroundings, one hot glow,
+		// razor reflections. Add lights here only if you want to break from it.
+
+		// --- the rotating core group ------------------------------------
+		const core = new THREE.Group();
+		scene.add(core);
+
+		// --- particles orbiting the core --------------------------------
+		function buildParticles() {
+			const COUNT = config.particleCount;
+			const positions = new Float32Array(COUNT * 3);
+			const seeds = new Float32Array(COUNT);
+			const flake = new Float32Array(COUNT);   // 0 = dust mote, 1 = bright flake
+			for (let i = 0; i < COUNT; i++) {
+				// distribute in a thick spherical shell around the model
+				const r = 2.6 + Math.random() * 7.0;
+				const theta = Math.random() * Math.PI * 2;
+				const phi = Math.acos(2 * Math.random() - 1);
+				positions[i * 3 + 0] = r * Math.sin(phi) * Math.cos(theta);
+				positions[i * 3 + 1] = (r * Math.cos(phi)) * 0.8;
+				positions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+				seeds[i] = Math.random();
+				flake[i] = Math.random() < 0.18 ? 1.0 : 0.0;  // ~18% bright glints; rest soft warm dust
 			}
+			const geo = new THREE.BufferGeometry();
+			geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+			geo.setAttribute("aSeed", new THREE.BufferAttribute(seeds, 1));
+			geo.setAttribute("aFlake", new THREE.BufferAttribute(flake, 1));
 
-			function getRenderSize() {
-				const viewport = getViewportSize();
-				const topRatio = getSceneTopRatio();
-				return {
-					width: viewport.width,
-					height: Math.max(1, Math.round(viewport.height * (1 - topRatio)))
-				};
-			}
-
-			function getSceneTopRatio() {
-				return isMobilePortraitViewport() ? MOBILE_SCENE_TOP_RATIO : DESKTOP_SCENE_TOP_RATIO;
-			}
-
-			function getDesiredPixelRatioCap() {
-				if (!isTouch) return 1.9;
-				if (isIPhoneX) return isPortraitViewport() ? 1.38 : 1.22;
-				if (isLowSpecMobile) return isPortraitViewport() ? 1.72 : 1.42;
-				return isPortraitViewport() ? 1.88 : 1.55;
-			}
-
-			function getMinimumPixelRatioCap() {
-				if (!isTouch) return 1.18;
-				if (isIPhoneX) return 1.16;
-				if (isLowSpecMobile) return 1.28;
-				return 1.36;
-			}
-
-				// Tier-based configuration
-				function getTierConfig() {
-					switch(deviceTier) {
-						case 'low':
-							return {
-								pixelRatioCap: 1.0,
-								gridX: 140,
-								gridZ: 80,
-								bloomScale: 0.5,
-								bloomStrength: 1.4,
-								bloomRadius: 0.24,
-								bloomThreshold: 0.72,
-								useMicroLayer: false,
-								pointSizeScale: 0.76,
-								shaftCount: 0,
-								enableShafts: false,
-								usePostprocessing: false, // Skip bloom entirely on low-end
-								antialias: false
-							};
-						case 'medium':
-							return {
-								pixelRatioCap: isIPhoneX ? 1.38 : isLowSpecMobile ? 1.5 : 1.6,
-								gridX: isIPhoneX ? 160 : isLowSpecMobile ? 220 : 280,
-								gridZ: isIPhoneX ? 96 : isLowSpecMobile ? 130 : 160,
-								bloomScale: isIPhoneX ? 0.64 : isLowSpecMobile ? 0.78 : 0.82,
-								bloomStrength: isIPhoneX ? 1.68 : isLowSpecMobile ? 2.0 : 2.1,
-								bloomRadius: isIPhoneX ? 0.28 : isLowSpecMobile ? 0.36 : 0.42,
-								bloomThreshold: isIPhoneX ? 0.68 : isLowSpecMobile ? 0.58 : 0.52,
-								useMicroLayer: false,
-								pointSizeScale: isIPhoneX ? 0.84 : isLowSpecMobile ? 0.94 : 1.0,
-								shaftCount: isIPhoneX ? 1 : 2,
-								enableShafts: false,
-								usePostprocessing: true,
-								antialias: !isLowSpecMobile
-							};
-						case 'high':
-						default:
-							return {
-								pixelRatioCap: isTouch ? 1.88 : 1.9,
-								gridX: isTouch ? 320 : 450,
-								gridZ: isTouch ? 180 : 252,
-								bloomScale: isTouch ? 0.86 : 0.82,
-								bloomStrength: isTouch ? 2.32 : 2.25,
-								bloomRadius: isTouch ? 0.46 : 0.5,
-								bloomThreshold: isTouch ? 0.48 : 0.5,
-								useMicroLayer: !isTouch && desktopCores >= 8,
-								pointSizeScale: isTouch ? 1.04 : 1.12,
-								shaftCount: 3,
-								enableShafts: false,
-								usePostprocessing: true,
-								antialias: true
-							};
-					}
-				}
-				
-				const tierConfig = getTierConfig();
-				const BASE_PIXEL_RATIO_CAP = tierConfig.pixelRatioCap;
-				const OCEAN_GRID_X = tierConfig.gridX;
-				const OCEAN_GRID_Z = tierConfig.gridZ;
-				const BASE_BLOOM_SCALE = tierConfig.bloomScale;
-				const BLOOM_STRENGTH = tierConfig.bloomStrength;
-				const BLOOM_RADIUS = tierConfig.bloomRadius;
-				const BLOOM_THRESHOLD = tierConfig.bloomThreshold;
-				const USE_MICRO_LAYER = tierConfig.useMicroLayer;
-				const POINT_SIZE_SCALE = tierConfig.pointSizeScale;
-				const SHAFT_COUNT = tierConfig.shaftCount;
-				const ENABLE_ATMOSPHERIC_SHAFTS = tierConfig.enableShafts;
-				const FORCE_SKIP_POSTPROCESSING = !tierConfig.usePostprocessing;
-				const CURSOR_RADIUS = isTouch ? 0.48 : 0.46;
-				const CURSOR_STRENGTH = isTouch ? 1.0 : 0.94;
-				const CURSOR_SMOOTHING = isTouch ? 0.16 : 0.18;
-				const CURSOR_RETURN = isTouch ? 0.018 : 0.025;
-				const CURSOR_RELEASE_FALLOFF = isTouch ? 0.02 : 0.026;
-				const CURSOR_RECENTER_WHEN_IDLE = isTouch ? 0.32 : 0.28;
-				const CURSOR_VEL_DAMP = isTouch ? 0.88 : 0.9;
-				const FXAA_STRENGTH = isTouch ? 1.0 : 1.24;
-				const WOMP_VERTEX_WELD_TOLERANCE = 1e-4;
-				const SHOW_PERF_OVERLAY = false;
-			const VIEWPORT_PROFILES = {
-				default: {
-					fov: 35,
-					cameraBase: [7.14, 1.56, 7.64],
-					cameraTarget: [0.42, 0.36, -0.06],
-					focusOffset: [0, 0.16, 0],
-					logoScale: 1,
-					logoOffset: [0, 0, 0],
-					pan: {
-						x: 0.934,
-						y: 0.36,
-						zx: 0.366,
-						zy: 0.16
-					}
-				},
-				mobilePortrait: {
-					fov: 46,
-					cameraBase: [8.35, 2.0, 9.1],
-					cameraTarget: [0.12, 0.36, -0.12],
-					focusOffset: [0, 0.08, 0],
-					logoScale: 0.68,
-					logoOffset: [-0.16, -0.04, 0.04],
-					pan: {
-						x: 0.324,
-						y: 0.12,
-						zx: 0.142,
-						zy: 0.06
-					}
-				}
-			};
-
-			function getSceneProfile() {
-				return isMobilePortraitViewport() ? VIEWPORT_PROFILES.mobilePortrait : VIEWPORT_PROFILES.default;
-			}
-			const REQUIRED_POSTPROCESSING_SYMBOLS = [
-				"Pass",
-				"ShaderPass",
-				"EffectComposer",
-				"RenderPass",
-				"CopyShader",
-				"FXAAShader",
-				"BufferGeometryUtils",
-				"LuminosityHighPassShader",
-				"UnrealBloomPass"
-			];
-
-			let renderer;
-			let scene;
-			let camera;
-			let composer;
-			let bloomPass;
-			let cinematicPass;
-			let fxaaPass;
-			let raycaster;
-			let useComposer = true;
-				let canUsePostprocessing = true;
-				let coreMaterial;
-				let hazeMaterial;
-				let microMaterial;
-				let shaftGroup;
-			let clock;
-			let cameraBase;
-			let cameraTarget;
-			let obeliskA;
-			let obeliskB;
-			let obeliskC;
-			let logoWrapper;
-			let logoBaseScale = 1;
-			let logoRotationTarget = 0;
-			let pixelRatioCap = BASE_PIXEL_RATIO_CAP;
-			let bloomScale = BASE_BLOOM_SCALE;
-			let showPerfOverlay = SHOW_PERF_OVERLAY;
-			const logoMeshes = [];
-			const logoMaterials = [];
-			const perfState = {
-				lastFrameTime: performance.now(),
-				sampleMs: 0,
-				sampleFrames: 0,
-				totalMs: 0,
-				totalFrames: 0,
-				fps: 0,
-				qualityTier: "balanced",
-				qualitySettled: false,
-				particleCount: 0
-			};
-			const logoPose = {
-				px: -0.060,
-				py: 0.030,
-				pz: -0.620,
-				rx: -0.612,
-				ry: 6.720,
-				rz: 0.353
-			};
-			const pointerState = {
-				x: 0.5,
-				y: 0.5,
-				targetX: 0.5,
-				targetY: 0.5,
-				ndcX: 0,
-				ndcY: 0,
-				vx: 0,
-				vy: 0,
-				smoothVx: 0,
-				smoothVy: 0,
-				speed: 0,
-				swirl: 0,
-				influence: 0,
-				release: 0,
-				pressing: false,
-				lastTs: performance.now(),
-				active: false,
-				events: 0
-			};
-			const logoInteraction = {
-				hover: 0,
-				targetHover: 0,
-				localX: 0,
-				localY: 0,
-				targetLocalX: 0,
-				targetLocalY: 0
-			};
-			let poseEditMode = false;
-
-			const oceanVertexShader = `
-				precision highp float;
-
-				uniform float u_time;
-				uniform float u_pointSize;
-				uniform vec2 u_obeliskA;
-				uniform vec2 u_obeliskB;
-				uniform vec2 u_obeliskC;
-				uniform float u_layer;
-				uniform vec2 u_cursor;
-				uniform vec2 u_cursorVelocity;
-				uniform float u_cursorRadius;
-				uniform float u_cursorStrength;
-				uniform float u_breezeTime;
-				uniform float u_pointerSpeed;
-				uniform float u_pointerSwirl;
-				uniform float u_cursorInfluence;
-					attribute float aSeed;
-
-					varying float vImpact;
-					varying float vCrest;
-					varying float vDepth;
-					varying float vSeed;
-					varying float vTwinkle;
-					varying float vHover;
-					varying float vCore;
-					varying float vTendril;
-					varying float vStream;
-					varying float vSpray;
-
-				vec3 mod289(vec3 x) {
-					return x - floor(x * (1.0 / 289.0)) * 289.0;
-				}
-
-				vec4 mod289(vec4 x) {
-					return x - floor(x * (1.0 / 289.0)) * 289.0;
-				}
-
-				vec4 permute(vec4 x) {
-					return mod289(((x * 34.0) + 1.0) * x);
-				}
-
-				vec4 taylorInvSqrt(vec4 r) {
-					return 1.79284291400159 - 0.85373472095314 * r;
-				}
-
-				float snoise(vec3 v) {
-					const vec2 C = vec2(1.0 / 6.0, 1.0 / 3.0);
-					const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
-
-					vec3 i = floor(v + dot(v, C.yyy));
-					vec3 x0 = v - i + dot(i, C.xxx);
-					vec3 g = step(x0.yzx, x0.xyz);
-					vec3 l = 1.0 - g;
-					vec3 i1 = min(g.xyz, l.zxy);
-					vec3 i2 = max(g.xyz, l.zxy);
-
-					vec3 x1 = x0 - i1 + C.xxx;
-					vec3 x2 = x0 - i2 + C.yyy;
-					vec3 x3 = x0 - D.yyy;
-
-					i = mod289(i);
-					vec4 p = permute(
-						permute(
-							permute(i.z + vec4(0.0, i1.z, i2.z, 1.0))
-							+ i.y + vec4(0.0, i1.y, i2.y, 1.0)
-						)
-						+ i.x + vec4(0.0, i1.x, i2.x, 1.0)
-					);
-
-					float n_ = 1.0 / 7.0;
-					vec3 ns = n_ * D.wyz - D.xzx;
-					vec4 j = p - 49.0 * floor(p * ns.z * ns.z);
-					vec4 x_ = floor(j * ns.z);
-					vec4 y_ = floor(j - 7.0 * x_);
-					vec4 x = x_ * ns.x + ns.yyyy;
-					vec4 y = y_ * ns.x + ns.yyyy;
-					vec4 h = 1.0 - abs(x) - abs(y);
-
-					vec4 b0 = vec4(x.xy, y.xy);
-					vec4 b1 = vec4(x.zw, y.zw);
-					vec4 s0 = floor(b0) * 2.0 + 1.0;
-					vec4 s1 = floor(b1) * 2.0 + 1.0;
-					vec4 sh = -step(h, vec4(0.0));
-					vec4 a0 = b0.xzyw + s0.xzyw * sh.xxyy;
-					vec4 a1 = b1.xzyw + s1.xzyw * sh.zzww;
-
-					vec3 p0 = vec3(a0.xy, h.x);
-					vec3 p1 = vec3(a0.zw, h.y);
-					vec3 p2 = vec3(a1.xy, h.z);
-					vec3 p3 = vec3(a1.zw, h.w);
-
-					vec4 norm = taylorInvSqrt(vec4(
-						dot(p0, p0),
-						dot(p1, p1),
-						dot(p2, p2),
-						dot(p3, p3)
-					));
-
-					p0 *= norm.x;
-					p1 *= norm.y;
-					p2 *= norm.z;
-					p3 *= norm.w;
-
-					vec4 m = max(0.6 - vec4(
-						dot(x0, x0),
-						dot(x1, x1),
-						dot(x2, x2),
-						dot(x3, x3)
-					), 0.0);
-					m *= m;
-
-					return 42.0 * dot(m * m, vec4(
-						dot(p0, x0),
-						dot(p1, x1),
-						dot(p2, x2),
-						dot(p3, x3)
-					));
-				}
-
-				float fbm(vec3 p) {
-					float value = 0.0;
-					float amplitude = 0.5;
-					value += amplitude * snoise(p);
-					p *= 2.02;
-					amplitude *= 0.5;
-					value += amplitude * snoise(p);
-					p *= 2.11;
-					amplitude *= 0.5;
-					value += amplitude * snoise(p);
-					p *= 2.23;
-					amplitude *= 0.5;
-					value += amplitude * snoise(p);
-					return value;
-				}
-
-					void main() {
-						vec3 p = position;
-						vec2 domain = p.xz * 0.148;
-						float t = u_time * 0.1;
-						vec2 drift = vec2(t * 0.48, -t * 0.27);
-
-						float low = fbm(vec3(domain + drift, t * 0.19));
-						float high = fbm(vec3(domain * 1.66 - drift * 1.22 + vec2(7.2, -3.4), t * 0.52 + aSeed * 1.43));
-						float micro = snoise(vec3(domain * 3.1 + vec2(aSeed * 3.3, aSeed * 2.3), t * 0.9)) * 0.041;
-						float wave = low * 0.8 + high * 0.3 + micro;
-
-						vec2 flowDir = normalize(vec2(-0.5, -0.87));
-						vec2 crossDir = vec2(-flowDir.y, flowDir.x);
-						float streamCoord = dot(p.xz, flowDir);
-						float crossCoord = dot(p.xz, crossDir);
-						float flowTime = u_breezeTime * 0.9;
-						float riverNoise = fbm(vec3(vec2(streamCoord * 0.24 + flowTime * 0.34, crossCoord * 0.48), t * 0.2));
-						float mainRibbon = 1.0 - smoothstep(0.08, 1.24, abs(crossCoord + sin(streamCoord * 0.42 - flowTime * 1.42) * 0.56 + riverNoise * 0.58));
-						float sideRibbon = 1.0 - smoothstep(0.04, 0.62, abs(crossCoord - 1.05 + sin(streamCoord * 0.58 - flowTime * 1.18 + 1.6) * 0.34));
-						float flowPulse = 0.55 + 0.45 * sin(streamCoord * 1.35 - flowTime * 3.1 + aSeed * 6.2831853);
-						float streamMask = clamp(max(mainRibbon, sideRibbon * 0.72) * (0.58 + flowPulse * 0.66), 0.0, 1.0);
-						float breezeBand = fbm(vec3(domain * 0.34 + flowDir * (u_breezeTime * 0.62), t * 0.18));
-						float breezeMask = smoothstep(-0.2, 0.64, breezeBand + high * 0.12);
-						streamMask = clamp(streamMask + breezeMask * 0.18, 0.0, 1.0);
-						float globalPush = 0.05 + (0.5 + 0.5 * sin(u_breezeTime * 0.62)) * 0.045;
-						float streamPush = globalPush + streamMask * (0.11 + flowPulse * 0.13);
-
-						p.x += flowDir.x * streamPush;
-						p.z += flowDir.y * streamPush;
-						p.x += crossDir.x * (wave * 0.018 + streamMask * sin(streamCoord * 0.9 - flowTime * 2.4) * 0.055);
-						p.z += crossDir.y * (wave * 0.018 + streamMask * sin(streamCoord * 0.9 - flowTime * 2.4) * 0.055);
-
-					vec4 probeClip = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
-					vec2 screenUv = probeClip.xy / max(0.0001, probeClip.w) * 0.5 + 0.5;
-					float screenRiverLine = 0.02 + screenUv.x * 0.74 + sin(screenUv.x * 9.0 - flowTime * 1.8) * 0.035;
-					float screenRiver = 1.0 - smoothstep(0.035, 0.19, abs(screenUv.y - screenRiverLine));
-					screenRiver *= smoothstep(-0.05, 0.12, screenUv.x) * (1.0 - smoothstep(0.78, 1.08, screenUv.x));
-					streamMask = clamp(max(streamMask, screenRiver * (0.72 + flowPulse * 0.36)), 0.0, 1.0);
-					p.x += flowDir.x * screenRiver * 0.08;
-					p.z += flowDir.y * screenRiver * 0.08;
-					vec2 away = screenUv - u_cursor;
-					float cursorDist = length(away);
-					float hoverMask = 1.0 - smoothstep(0.0, u_cursorRadius, cursorDist);
-					float cursorInfluence = clamp(0.12 + u_cursorInfluence * 1.2, 0.0, 1.55);
-					hoverMask = pow(max(hoverMask, 0.0), 1.08) * cursorInfluence;
-					vec2 repelDir = cursorDist > 0.0001 ? away / cursorDist : vec2(0.0);
-					float cursorVelMag = clamp(length(u_cursorVelocity), 0.0, 1.0);
-					float speedBias = smoothstep(0.06, 0.78, u_pointerSpeed);
-					float swirlBias = clamp(abs(u_pointerSwirl), 0.0, 1.0);
-					float coreMask = clamp(pow(hoverMask, 1.15) * (0.36 + speedBias * 1.04), 0.0, 1.0);
-					float tendrilMask = clamp((1.0 - coreMask) * (0.26 + speedBias * 0.96) * (0.34 + breezeMask * 0.76), 0.0, 1.0);
-					float whip = smoothstep(0.42, 0.96, u_pointerSpeed);
-					float breeze = 0.5 + 0.5 * sin(u_breezeTime + p.x * 0.19 + p.z * 0.23 + aSeed * 6.2831853);
-					vec2 screenFlowDir = cursorVelMag > 0.0001 ? normalize(u_cursorVelocity) : repelDir;
-					vec2 worldFlowDir = cursorVelMag > 0.0001 ? normalize(vec2(u_cursorVelocity.x, -u_cursorVelocity.y)) : repelDir;
-					float flowDot = dot(repelDir, screenFlowDir);
-					float aheadMask = smoothstep(-0.25, 0.78, flowDot);
-					float behindMask = smoothstep(-0.22, 0.9, -flowDot);
-					float scoopMask = clamp(pow(hoverMask, 0.66) * (0.46 + cursorVelMag * 1.46), 0.0, 1.0);
-					float wakeMask = clamp(pow(hoverMask, 0.64) * speedBias * (0.46 + behindMask * 1.28), 0.0, 1.0);
-					float brushMask = clamp(pow(hoverMask, 0.74) * (0.72 + cursorVelMag * 1.14), 0.0, 1.0);
-					float repel = u_cursorStrength * pow(hoverMask, 1.0) * (0.44 + breeze * 0.17) * (0.8 - speedBias * 0.2);
-					float scoopPull = u_cursorStrength * scoopMask * aheadMask * (0.2 + cursorVelMag * 0.54);
-					float throwPush = u_cursorStrength * (brushMask * 0.32 + wakeMask * 0.72 + scoopMask * behindMask * 0.5) * (0.52 + cursorVelMag * 1.28);
-					vec2 swirlDir = vec2(-repelDir.y, repelDir.x) * sign(u_pointerSwirl + 0.0001);
-
-					p.x += repelDir.x * repel;
-					p.z += repelDir.y * repel;
-					p.x -= repelDir.x * scoopPull;
-					p.z -= repelDir.y * scoopPull;
-					p.x += worldFlowDir.x * throwPush;
-					p.z += worldFlowDir.y * throwPush;
-					p.x += u_cursorVelocity.x * hoverMask * u_cursorStrength * (0.11 + whip * 0.28);
-					p.z += -u_cursorVelocity.y * hoverMask * u_cursorStrength * (0.11 + whip * 0.28);
-					p.x += swirlDir.x * hoverMask * (0.012 + swirlBias * 0.042) * (0.48 + speedBias * 0.56);
-					p.z += swirlDir.y * hoverMask * (0.012 + swirlBias * 0.042) * (0.48 + speedBias * 0.56);
-					p.y += hoverMask * u_cursorStrength * (0.048 + breeze * 0.038 + throwPush * 0.3 + behindMask * 0.1);
-
-					vec2 fieldA = (p.xz - u_obeliskA) * vec2(1.12, 1.38);
-					vec2 fieldB = (p.xz - u_obeliskB) * vec2(1.12, 1.38);
-					vec2 fieldC = (p.xz - u_obeliskC) * vec2(1.06, 1.32);
-					float impactA = 1.0 - smoothstep(0.05, 1.42, length(fieldA));
-					float impactB = 1.0 - smoothstep(0.05, 1.42, length(fieldB));
-					float impactC = 1.0 - smoothstep(0.05, 1.28, length(fieldC));
-					float impactCore = pow(max(max(impactA, impactB), impactC), 1.22);
-					float rimA = 1.0 - smoothstep(0.08, 0.38, abs(length(fieldA) - 0.32));
-					float rimB = 1.0 - smoothstep(0.08, 0.38, abs(length(fieldB) - 0.32));
-					float rimC = 1.0 - smoothstep(0.08, 0.36, abs(length(fieldC) - 0.3));
-					float rimBurst = max(max(rimA, rimB), rimC);
-					float jetPulse = 0.5 + 0.5 * sin(u_breezeTime * 1.05 + streamCoord * 0.62);
-					float collision = clamp(impactCore * (0.56 + streamMask * 0.96) + rimBurst * (0.16 + jetPulse * 0.2), 0.0, 1.08);
-					float spray = clamp(pow(collision, 1.2) * (0.58 + flowPulse * 0.52 + jetPulse * 0.12), 0.0, 1.02);
-					vec2 impactVec = fieldA * impactA + fieldB * impactB + fieldC * impactC * 1.18;
-					vec2 obstacleNormal = length(impactVec) > 0.0001 ? normalize(impactVec) : flowDir;
-					vec2 obstacleTangent = vec2(-obstacleNormal.y, obstacleNormal.x);
-					if (dot(obstacleTangent, flowDir) < 0.0) obstacleTangent *= -1.0;
-
-					vec2 seamAxis = normalize(vec2(0.18, 1.0));
-					float seamDist = abs(dot(p.xz, vec2(seamAxis.y, -seamAxis.x)));
-					float bridge = 1.0 - smoothstep(0.02, 0.48, seamDist);
-
-					float impact = max(max(max(impactA, impactB), impactC), bridge * 0.2);
-					impact = pow(impact, 1.45);
-
-					float outwardPush = spray * (0.15 + streamMask * 0.16);
-					float sideSlip = spray * (0.24 + jetPulse * 0.11);
-					float downstreamCarry = spray * (0.1 + streamMask * 0.14);
-					p.x += obstacleNormal.x * outwardPush;
-					p.z += obstacleNormal.y * outwardPush;
-					p.x += obstacleTangent.x * sideSlip;
-					p.z += obstacleTangent.y * sideSlip;
-					p.x += flowDir.x * downstreamCarry;
-					p.z += flowDir.y * downstreamCarry;
-					p.x += crossDir.x * (impactA - impactB) * (streamMask * 0.1 + rimBurst * 0.06);
-					p.z += crossDir.y * (impactA - impactB) * (streamMask * 0.1 + rimBurst * 0.06);
-
-					float crest = smoothstep(0.04, 0.56, wave + streamMask * 0.4 + breezeMask * 0.24 + impact * 0.52 + high * 0.28 + spray * 0.72 + rimBurst * 0.2 + coreMask * 0.18 + tendrilMask * 0.1);
-
-					p.y += wave * (0.06 + impact * 0.13);
-					p.y += impact * 0.07;
-					p.y += streamMask * 0.09 + spray * (0.46 + rimBurst * 0.18 + jetPulse * 0.12);
-
-						vImpact = impact;
-						vCrest = crest;
-						vSeed = aSeed;
-						vTwinkle = 0.72 + 0.28 * sin(u_time * (0.55 + aSeed * 1.7) + aSeed * 23.0);
-						vHover = hoverMask * (0.66 + cursorVelMag * 0.16);
-						vCore = coreMask;
-						vTendril = tendrilMask;
-						vStream = streamMask;
-						vSpray = min(1.0, spray + rimBurst * 0.16 + impactC * 0.06);
-
-					vec4 mvPosition = modelViewMatrix * vec4(p, 1.0);
-					vDepth = clamp((-mvPosition.z - 0.8) / 11.0, 0.0, 1.0);
-					gl_Position = projectionMatrix * mvPosition;
-
-						float perspective = 32.0 / max(1.0, -mvPosition.z);
-						float baseSize = (u_pointSize * mix(0.6, 1.08, aSeed)) + vCrest * 0.28 + vImpact * 0.2 + vHover * 0.14 + vCore * 0.28 + vSpray * 0.16 - vTendril * 0.08;
-						baseSize *= mix(1.0, 0.84, whip * vCore);
-						if (u_layer > 1.5) {
-							baseSize *= 0.48;
-						} else if (u_layer > 0.5) {
-							baseSize *= 0.9;
-						} else {
-							baseSize *= 0.72;
-						}
-						float maxSize = u_layer > 1.5 ? 1.08 : (u_layer > 0.5 ? 1.68 : 1.44);
-						gl_PointSize = clamp(baseSize * perspective, 0.28, maxSize);
-					}
-				`;
-
-			const oceanFragmentShader = `
-				precision highp float;
-
-				uniform float u_alphaScale;
-				uniform float u_layer;
-				uniform vec3 u_colorDeep;
-				uniform vec3 u_colorBright;
-
-					varying float vImpact;
-					varying float vCrest;
-					varying float vDepth;
-					varying float vSeed;
-					varying float vTwinkle;
-					varying float vHover;
-					varying float vCore;
-					varying float vTendril;
-					varying float vStream;
-					varying float vSpray;
-
-					void main() {
-						vec2 uv = gl_PointCoord - 0.5;
-						float body = exp(-dot(uv, uv) * (u_layer > 1.5 ? 42.0 : 31.0));
-						float core = exp(-dot(uv, uv) * (u_layer > 1.5 ? 126.0 : 92.0));
-						float halo = exp(-dot(uv, uv) * (u_layer > 1.5 ? 12.0 : 10.0));
-						if (u_layer > 1.5 && vSeed < 0.4) discard;
-
-						float highlight = clamp(vCrest * 0.82 + vImpact * 0.66 + vDepth * 0.22 + vHover * 0.2 + vCore * 0.62 + vStream * 0.32 + vSpray * 0.64, 0.0, 1.0);
-						vec3 col = mix(u_colorDeep, u_colorBright, highlight);
-						vec3 electricCore = vec3(1.0, 0.72, 0.24);
-						vec3 whiteHot = vec3(1.0, 0.95, 0.78);
-						if (u_layer > 0.5) {
-							col = mix(col, u_colorBright, 0.42);
-						}
-						if (u_layer > 1.5) {
-							col = mix(col, u_colorBright, 0.62);
-						}
-						col = mix(col, u_colorBright, vHover * (u_layer > 1.5 ? 0.26 : 0.2));
-						col = mix(col, electricCore, vCore * (u_layer > 1.5 ? 0.9 : 0.76));
-						col = mix(col, electricCore, vSpray * 0.78);
-						col = mix(col, whiteHot, clamp(vSpray * 0.22 + vImpact * 0.14, 0.0, 1.0));
-
-						float sparkle = smoothstep(0.72, 1.0, vCrest) * (0.58 + core * 0.52 + vSpray * 0.2);
-						float alpha = body * (u_layer > 1.5 ? 0.026 : 0.038);
-						alpha += body * (vCrest * 0.14 + vImpact * 0.13);
-						alpha += core * (u_layer > 1.5 ? 0.088 : (u_layer > 0.5 ? 0.094 : 0.102));
-						alpha += halo * (u_layer > 1.5 ? 0.026 : (u_layer > 0.5 ? 0.031 : 0.038));
-						alpha += sparkle * (u_layer > 1.5 ? 0.25 : 0.21);
-						alpha += vHover * (u_layer > 1.5 ? 0.08 : 0.065);
-						alpha += vCore * (u_layer > 1.5 ? 0.28 : 0.22);
-						alpha += vTendril * (u_layer > 1.5 ? 0.074 : 0.064);
-						alpha += vStream * (u_layer > 1.5 ? 0.084 : 0.072);
-						alpha += vSpray * (u_layer > 1.5 ? 0.24 : 0.19);
-						alpha *= (0.39 + vDepth * 0.95);
-						alpha *= mix(1.0, 0.74, vTendril * (1.0 - vCore));
-						alpha *= mix(0.88, 1.1, vTwinkle);
-						alpha *= u_alphaScale;
-
-					if (alpha < 0.0012) discard;
-					gl_FragColor = vec4(col, alpha);
-				}
-			`;
-
-			const cinematicGradeShader = {
+			const mat = new THREE.ShaderMaterial({
+				transparent: true,
+				depthWrite: false,
+				blending: THREE.AdditiveBlending,
 				uniforms: {
-					tDiffuse: { value: null },
-					u_resolution: { value: new THREE.Vector2(1, 1) },
-					u_focus: { value: new THREE.Vector2(0.54, 0.5) },
-					u_exposure: { value: 1.04 },
-					u_saturation: { value: 1.16 },
-					u_sharpness: { value: isTouch ? 0.2 : 0.24 },
-					u_blurStrength: { value: isTouch ? 0.42 : 0.56 },
-					u_sceneTopRatio: { value: 0 }
+					u_time: { value: 0 },
+					u_size: { value: config.particleSize * renderer.getPixelRatio() },
+					u_colorA: { value: new THREE.Color(0x6a4420) },  // deep warm amber dust
+					u_colorB: { value: new THREE.Color(0xffd49a) }   // warm glow (not white)
 				},
 				vertexShader: `
-					varying vec2 vUv;
-
+					uniform float u_time;
+					uniform float u_size;
+					attribute float aSeed;
+					attribute float aFlake;
+					varying float vFade;
+					varying float vFlake;
+					varying float vGlint;
 					void main() {
-						vUv = uv;
-						gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+						vec3 p = position;
+						float t = u_time * (0.12 + aSeed * 0.4);
+						// fluttering, drifting motion — flakes "fly"
+						p.x += sin(t + aSeed * 6.28) * 0.6;
+						p.y += cos(t * 0.7 + aSeed * 6.28) * 0.45 + sin(u_time * 0.08 + aSeed * 3.0) * 0.3;
+						p.z += sin(t * 0.9 + aSeed * 4.0) * 0.6;
+						vec4 mv = modelViewMatrix * vec4(p, 1.0);
+						vFade = clamp((-mv.z) / 16.0, 0.0, 1.0);
+						vFlake = aFlake;
+						// sharp periodic glint — flakes catching the light
+						float g = sin(u_time * (2.0 + aSeed * 5.0) + aSeed * 40.0);
+						vGlint = aFlake * pow(max(g, 0.0), 8.0);
+						gl_Position = projectionMatrix * mv;
+						float twinkle = 0.5 + 0.5 * sin(u_time * (1.0 + aSeed * 3.0) + aSeed * 30.0);
+						float baseSize = mix(0.35, 1.4, aSeed) * mix(0.8, 1.6, aFlake);
+						gl_PointSize = u_size * baseSize * (twinkle * 0.6 + 0.4 + vGlint * 1.6) / max(1.0, -mv.z);
 					}
 				`,
 				fragmentShader: `
-					precision highp float;
-
-					uniform sampler2D tDiffuse;
-					uniform vec2 u_resolution;
-					uniform vec2 u_focus;
-					uniform float u_exposure;
-					uniform float u_saturation;
-					uniform float u_sharpness;
-					uniform float u_blurStrength;
-					uniform float u_sceneTopRatio;
-
-					varying vec2 vUv;
-
-					vec3 sampleBloom(vec2 uv, vec2 dir, float amount) {
-						vec2 px = dir / u_resolution;
-						vec3 c = texture2D(tDiffuse, uv).rgb * 0.34;
-						c += texture2D(tDiffuse, uv + px * amount).rgb * 0.18;
-						c += texture2D(tDiffuse, uv - px * amount).rgb * 0.18;
-						c += texture2D(tDiffuse, uv + px * amount * 2.0).rgb * 0.08;
-						c += texture2D(tDiffuse, uv - px * amount * 2.0).rgb * 0.08;
-						c += texture2D(tDiffuse, uv + px.yx * amount * vec2(1.0, -1.0)).rgb * 0.07;
-						c += texture2D(tDiffuse, uv - px.yx * amount * vec2(1.0, -1.0)).rgb * 0.07;
-						return c;
-					}
-
-					float gradientNoise(vec2 p) {
-						return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715))));
-					}
-
+					uniform vec3 u_colorA;
+					uniform vec3 u_colorB;
+					varying float vFade;
+					varying float vFlake;
+					varying float vGlint;
 					void main() {
-						vec3 sceneBaseColor = vec3(0.0902, 0.0235, 0.0078);
-						float pageY = clamp(u_sceneTopRatio + (1.0 - u_sceneTopRatio) * (1.0 - vUv.y), 0.0, 1.0);
-						vec3 pageBackground = mix(vec3(0.0), sceneBaseColor, smoothstep(0.0, 1.0, pageY));
-						pageBackground = clamp(pageBackground + (gradientNoise(gl_FragCoord.xy) - 0.5) * 0.006, 0.0, 1.0);
-						vec3 base = texture2D(tDiffuse, vUv).rgb;
-						float baseLuma = dot(base, vec3(0.2126, 0.7152, 0.0722));
-						float skyBand = smoothstep(0.32, 0.72, vUv.y);
-						float darkSky = 1.0 - smoothstep(0.045, 0.18, baseLuma);
-						float brightDetail = smoothstep(0.16, 0.34, max(max(base.r, base.g), base.b));
-						float backgroundMask = clamp(skyBand * darkSky * (1.0 - brightDetail), 0.0, 1.0);
-						base = mix(base, pageBackground, backgroundMask);
-						float distToFocus = distance(vUv, u_focus);
-						float focusMask = 1.0 - smoothstep(0.16, 0.37, distToFocus);
-						float foregroundMask = smoothstep(0.52, 0.95, 1.0 - vUv.y);
-						float farMask = smoothstep(0.3, 0.92, distToFocus);
-						float blurMask = clamp((foregroundMask * 0.54 + farMask * 0.3) * (1.0 - focusMask * 0.92), 0.0, 0.72);
-
-						float blurRadius = mix(1.0, 6.5, blurMask) * u_blurStrength;
-						vec3 blurred = sampleBloom(vUv, vec2(1.0, 0.0), blurRadius);
-						blurred += sampleBloom(vUv, vec2(0.0, 1.0), blurRadius);
-						blurred *= 0.5;
-						vec3 color = mix(base, blurred, blurMask);
-
-						vec2 px = 1.0 / u_resolution;
-						vec3 neighbor = (
-							texture2D(tDiffuse, vUv + vec2(px.x, 0.0)).rgb +
-							texture2D(tDiffuse, vUv - vec2(px.x, 0.0)).rgb +
-							texture2D(tDiffuse, vUv + vec2(0.0, px.y)).rgb +
-							texture2D(tDiffuse, vUv - vec2(0.0, px.y)).rgb
-						) * 0.25;
-						float sharpMask = clamp(0.42 + focusMask * 1.08 - blurMask * 0.7, 0.0, 1.0);
-						color += (base - neighbor) * u_sharpness * sharpMask;
-
-						float glowSeed = smoothstep(0.18, 0.86, max(max(color.r, color.g), color.b));
-						color += vec3(0.48, 0.16, 0.01) * glowSeed * (0.12 + blurMask * 0.12);
-						color *= u_exposure;
-						color += vec3(0.0, 0.012, 0.026);
-						color = pow(max(color, 0.0), vec3(0.9));
-
-						float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
-						color = mix(vec3(luma), color, u_saturation);
-						color *= 1.0 - smoothstep(0.64, 1.22, distance(vUv, vec2(0.5))) * 0.22;
-						color = mix(color, pageBackground, backgroundMask * 0.92);
-
-						gl_FragColor = vec4(color, 1.0);
+						vec2 uv = gl_PointCoord - 0.5;
+						float d = dot(uv, uv);
+						// flakes have a sharp bright core; dust is softer
+						float sharp = mix(7.0, 26.0, vFlake);
+						float soft = exp(-d * sharp);
+						float core = exp(-d * 80.0);
+						if (soft < 0.02 && core < 0.02) discard;
+						vec3 col = mix(u_colorA, u_colorB, clamp(vFlake * 0.5 + vGlint + core, 0.0, 1.0));
+						float a = soft * (0.22 + vFade * 0.6) + core * (0.4 + vGlint * 0.6);
+						a *= (0.6 + vFade * 0.6);
+						gl_FragColor = vec4(col, a);
 					}
 				`
-			};
-
-			function createOceanMaterial(config) {
-				return new THREE.ShaderMaterial({
-					transparent: true,
-					depthWrite: false,
-					blending: THREE.AdditiveBlending,
-					uniforms: {
-						u_time: { value: 0 },
-						u_pointSize: { value: config.pointSize },
-						u_layer: { value: config.layer },
-						u_alphaScale: { value: config.alphaScale },
-						u_colorDeep: { value: new THREE.Color(config.colorDeep) },
-						u_colorBright: { value: new THREE.Color(config.colorBright) },
-						u_cursor: { value: new THREE.Vector2(pointerState.x, pointerState.y) },
-						u_cursorVelocity: { value: new THREE.Vector2(0, 0) },
-						u_cursorRadius: { value: config.cursorRadius },
-						u_cursorStrength: { value: config.cursorStrength },
-						u_breezeTime: { value: 0 },
-						u_pointerSpeed: { value: 0 },
-						u_pointerSwirl: { value: 0 },
-						u_cursorInfluence: { value: 0 },
-						u_obeliskA: { value: obeliskA.clone() },
-						u_obeliskB: { value: obeliskB.clone() },
-						u_obeliskC: { value: obeliskC.clone() }
-					},
-					vertexShader: oceanVertexShader,
-					fragmentShader: oceanFragmentShader
-				});
-			}
-
-			function createShaftTexture(width, height) {
-				const texCanvas = document.createElement("canvas");
-				texCanvas.width = width;
-				texCanvas.height = height;
-				const ctx = texCanvas.getContext("2d");
-				const grad = ctx.createLinearGradient(0, 0, width, 0);
-
-				grad.addColorStop(0.0, "rgba(255,255,255,0)");
-				grad.addColorStop(0.36, "rgba(255,255,255,0.75)");
-				grad.addColorStop(0.5, "rgba(255,255,255,1)");
-				grad.addColorStop(0.64, "rgba(255,255,255,0.75)");
-				grad.addColorStop(1.0, "rgba(255,255,255,0)");
-
-				ctx.fillStyle = "rgba(0,0,0,0)";
-				ctx.fillRect(0, 0, width, height);
-				ctx.fillStyle = grad;
-				ctx.fillRect(0, 0, width, height);
-
-				const texture = new THREE.CanvasTexture(texCanvas);
-				texture.wrapS = THREE.ClampToEdgeWrapping;
-				texture.wrapT = THREE.ClampToEdgeWrapping;
-				return texture;
-			}
-
-			function showSupportMessage(message) {
-				support.classList.remove("hidden");
-				support.textContent = message;
-			}
-
-			function setPerfOverlayVisibility() {
-				if (!perf) return;
-				perf.classList.toggle("hidden", !showPerfOverlay);
-				if (showPerfOverlay) {
-					updatePerfHud();
-				}
-			}
-
-			function updatePerfHud(note) {
-				if (!perf || !showPerfOverlay) return;
-				const fpsText = perfState.fps > 0 ? perfState.fps.toFixed(0) : "--";
-				const dprText = renderer ? renderer.getPixelRatio().toFixed(2) : "--";
-				const particles = perfState.particleCount > 0 ? perfState.particleCount.toLocaleString() : "--";
-				const suffix = note ? ` | ${note}` : "";
-				perf.textContent = `FPS ${fpsText} | DPR ${dprText} | cap ${pixelRatioCap.toFixed(2)} | bloom ${bloomScale.toFixed(2)} | pts ${particles} | ${perfState.qualityTier}${suffix}`;
-			}
-
-			function updateCinematicResolution() {
-				if (!renderer || !cinematicPass || !cinematicPass.material?.uniforms?.u_resolution) return;
-				const pixelRatio = renderer.getPixelRatio();
-				const renderSize = getRenderSize();
-				cinematicPass.material.uniforms.u_resolution.value.set(
-					Math.max(1, Math.floor(renderSize.width * pixelRatio)),
-					Math.max(1, Math.floor(renderSize.height * pixelRatio))
-				);
-				if (cinematicPass.material.uniforms.u_sceneTopRatio) {
-					cinematicPass.material.uniforms.u_sceneTopRatio.value = getSceneTopRatio();
-				}
-			}
-
-			function updateFxaaResolution() {
-				if (!renderer || !fxaaPass || !fxaaPass.material?.uniforms?.resolution) return;
-				const pixelRatio = renderer.getPixelRatio();
-				const renderSize = getRenderSize();
-				const invW = 1 / Math.max(1, Math.floor(renderSize.width * pixelRatio));
-				const invH = 1 / Math.max(1, Math.floor(renderSize.height * pixelRatio));
-				fxaaPass.material.uniforms.resolution.value.set(
-					invW * FXAA_STRENGTH,
-					invH * FXAA_STRENGTH
-				);
-			}
-
-			function applyRenderQuality() {
-				if (!renderer) return;
-				const renderSize = getRenderSize();
-				const desiredCap = getDesiredPixelRatioCap();
-				if (perfState.qualityTier === "performance") {
-					pixelRatioCap = Math.min(pixelRatioCap, desiredCap);
-				} else {
-					pixelRatioCap = desiredCap;
-				}
-				const renderPixelRatio = Math.min(window.devicePixelRatio, pixelRatioCap);
-				renderer.setPixelRatio(renderPixelRatio);
-				renderer.setSize(renderSize.width, renderSize.height, false);
-
-				if (useComposer && composer && bloomPass) {
-					if (typeof composer.setPixelRatio === "function") {
-						composer.setPixelRatio(renderPixelRatio);
-					}
-					composer.setSize(renderSize.width, renderSize.height);
-					bloomPass.setSize(
-						Math.max(1, Math.floor(renderSize.width * bloomScale)),
-						Math.max(1, Math.floor(renderSize.height * bloomScale))
-					);
-					updateCinematicResolution();
-					updateFxaaResolution();
-				}
-
-				updatePerfHud();
-			}
-
-			function settleAdaptiveQuality() {
-				if (perfState.qualitySettled || perfState.totalMs < 3400) {
-					return;
-				}
-
-				const avgFps = (perfState.totalFrames * 1000) / Math.max(1, perfState.totalMs);
-				let note = "stable";
-
-				// More aggressive downscaling for struggling devices
-				if (avgFps < 24) {
-					pixelRatioCap = Math.max(getMinimumPixelRatioCap() * 0.8, pixelRatioCap - 0.18);
-					bloomScale = Math.max(0.4, bloomScale - 0.12);
-					perfState.qualityTier = "performance";
-					note = "aggressive downscale";
-					applyRenderQuality();
-				} else if (avgFps < 36) {
-					pixelRatioCap = Math.max(getMinimumPixelRatioCap(), pixelRatioCap - 0.12);
-					bloomScale = Math.max(isTouch ? 0.68 : 0.74, bloomScale - 0.08);
-					perfState.qualityTier = "performance";
-					note = "auto downscale";
-					applyRenderQuality();
-				} else if (!isLowSpecMobile && deviceTier !== 'low' && avgFps > 56 && window.devicePixelRatio > pixelRatioCap + 0.08) {
-					pixelRatioCap = Math.min(window.devicePixelRatio, pixelRatioCap + 0.2);
-					bloomScale = Math.min(1.0, bloomScale + 0.08);
-					perfState.qualityTier = "high";
-					note = "auto upscale";
-					applyRenderQuality();
-				}
-
-				perfState.qualitySettled = true;
-				updatePerfHud(note);
-				console.log(`Quality settled: ${note} | FPS: ${avgFps.toFixed(1)} | Device tier: ${deviceTier}`);
-			}
-
-			function updateObeliskAnchorsFromLogo() {
-				if (!logoWrapper) return;
-				const worldBounds = new THREE.Box3().setFromObject(logoWrapper);
-				const profile = getSceneProfile();
-				const focusCenter = new THREE.Vector3();
-				worldBounds.getCenter(focusCenter);
-				const midZ = (worldBounds.min.z + worldBounds.max.z) * 0.5;
-				const width = worldBounds.max.x - worldBounds.min.x;
-				const leftX = worldBounds.min.x + width * 0.29;
-				const rightX = worldBounds.max.x - width * 0.29;
-				const centerX = (worldBounds.min.x + worldBounds.max.x) * 0.5;
-				cameraTarget.set(
-					focusCenter.x + profile.focusOffset[0],
-					focusCenter.y + profile.focusOffset[1],
-					focusCenter.z + profile.focusOffset[2]
-				);
-				obeliskA.set(leftX, midZ + 0.06);
-				obeliskB.set(rightX, midZ - 0.05);
-				obeliskC.set(centerX, midZ + 0.01);
-				syncObeliskUniforms();
-			}
-
-			function applyLogoPose() {
-				if (!logoWrapper) return;
-				const profile = getSceneProfile();
-				logoWrapper.position.set(
-					logoPose.px + profile.logoOffset[0],
-					logoPose.py + profile.logoOffset[1],
-					logoPose.pz + profile.logoOffset[2]
-				);
-				logoWrapper.rotation.set(logoPose.rx, logoPose.ry, logoPose.rz);
-				logoWrapper.scale.setScalar(logoBaseScale * profile.logoScale);
-				logoRotationTarget = logoPose.ry;
-				updateObeliskAnchorsFromLogo();
-			}
-
-			function updateTunerHud() {
-				if (!tuner) return;
-				if (!poseEditMode) {
-					tuner.classList.add("hidden");
-					return;
-				}
-				tuner.classList.remove("hidden");
-				tuner.textContent =
-					"Pose edit mode (P to close)\n"
-					+ "Move: J/L (x) I/K (y) U/O (z)\n"
-					+ "Rotate: Q/A (rx) W/S (ry) E/D (rz)\n"
-					+ "Hold Shift for larger steps\n"
-					+ `pos=(${logoPose.px.toFixed(3)}, ${logoPose.py.toFixed(3)}, ${logoPose.pz.toFixed(3)})  `
-					+ `rot=(${logoPose.rx.toFixed(3)}, ${logoPose.ry.toFixed(3)}, ${logoPose.rz.toFixed(3)})`;
-			}
-
-			function onPoseKeydown(event) {
-				const key = event.key.toLowerCase();
-				if (key === "p") {
-					poseEditMode = !poseEditMode;
-					updateTunerHud();
-					return;
-				}
-				if (key === "f") {
-					showPerfOverlay = !showPerfOverlay;
-					setPerfOverlayVisibility();
-					return;
-				}
-
-				if (!poseEditMode || !logoWrapper) return;
-
-				const step = event.shiftKey ? 0.05 : 0.01;
-				const rotStep = event.shiftKey ? 0.06 : 0.012;
-				let changed = false;
-
-				switch (key) {
-					case "j":
-						logoPose.px -= step;
-						changed = true;
-						break;
-					case "l":
-						logoPose.px += step;
-						changed = true;
-						break;
-					case "i":
-						logoPose.py += step;
-						changed = true;
-						break;
-					case "k":
-						logoPose.py -= step;
-						changed = true;
-						break;
-					case "u":
-						logoPose.pz -= step;
-						changed = true;
-						break;
-					case "o":
-						logoPose.pz += step;
-						changed = true;
-						break;
-					case "q":
-						logoPose.rx += rotStep;
-						changed = true;
-						break;
-					case "a":
-						logoPose.rx -= rotStep;
-						changed = true;
-						break;
-					case "w":
-						logoPose.ry += rotStep;
-						changed = true;
-						break;
-					case "s":
-						logoPose.ry -= rotStep;
-						changed = true;
-						break;
-					case "e":
-						logoPose.rz += rotStep;
-						changed = true;
-						break;
-					case "d":
-						logoPose.rz -= rotStep;
-						changed = true;
-						break;
-					default:
-						break;
-				}
-
-				if (changed) {
-					event.preventDefault();
-					applyLogoPose();
-					updateTunerHud();
-				}
-			}
-
-			function setPointerTarget(clientX, clientY, pressing = false) {
-				const rect = canvas.getBoundingClientRect();
-				if (!rect.width || !rect.height) return;
-
-				const nx = THREE.MathUtils.clamp((clientX - rect.left) / rect.width, 0, 1);
-				const ny = THREE.MathUtils.clamp((clientY - rect.top) / rect.height, 0, 1);
-				const cursorY = 1 - ny;
-				const now = performance.now();
-				const dt = Math.max(8, now - pointerState.lastTs);
-				const frameScale = 16.666 / dt;
-				const prevTargetX = pointerState.targetX;
-				const prevTargetY = pointerState.targetY;
-
-				pointerState.targetX = nx;
-				pointerState.targetY = cursorY;
-				pointerState.ndcX = nx * 2 - 1;
-				pointerState.ndcY = cursorY * 2 - 1;
-				pointerState.vx = THREE.MathUtils.clamp((nx - prevTargetX) * frameScale * 3.4, -2.1, 2.1);
-				pointerState.vy = THREE.MathUtils.clamp((cursorY - prevTargetY) * frameScale * 3.4, -2.1, 2.1);
-				pointerState.lastTs = now;
-				pointerState.active = true;
-				pointerState.pressing = pressing;
-				pointerState.release = 1.0;
-				pointerState.events += 1;
-			}
-
-			function onPointerMove(event) {
-				setPointerTarget(event.clientX, event.clientY, event.buttons > 0 || event.pointerType === "touch");
-			}
-
-			function onPointerDown(event) {
-				setPointerTarget(event.clientX, event.clientY, true);
-			}
-
-			function onPointerRelease() {
-				pointerState.active = false;
-				pointerState.pressing = false;
-				pointerState.release = Math.max(pointerState.release, 1.0);
-				logoInteraction.targetHover = 0;
-			}
-
-			function updateCursorState() {
-				if (pointerState.active) {
-					pointerState.release = 1.0;
-				} else {
-					pointerState.release = Math.max(0.0, pointerState.release - CURSOR_RELEASE_FALLOFF);
-					const recenterStrength = CURSOR_RETURN * (1.0 - pointerState.release) * CURSOR_RECENTER_WHEN_IDLE;
-					pointerState.targetX += (0.5 - pointerState.targetX) * recenterStrength;
-					pointerState.targetY += (0.5 - pointerState.targetY) * recenterStrength;
-				}
-
-				const prevX = pointerState.x;
-				const prevY = pointerState.y;
-				const prevSmoothVx = pointerState.smoothVx;
-				const prevSmoothVy = pointerState.smoothVy;
-
-				pointerState.x += (pointerState.targetX - pointerState.x) * CURSOR_SMOOTHING;
-				pointerState.y += (pointerState.targetY - pointerState.y) * CURSOR_SMOOTHING;
-				pointerState.smoothVx = pointerState.x - prevX;
-				pointerState.smoothVy = pointerState.y - prevY;
-
-				const speedInstant = Math.min(1.0, Math.hypot(pointerState.smoothVx, pointerState.smoothVy) * 22.0);
-				pointerState.speed = THREE.MathUtils.lerp(pointerState.speed, speedInstant, 0.22);
-
-				const cross = prevSmoothVx * pointerState.smoothVy - prevSmoothVy * pointerState.smoothVx;
-				const swirlInstant = THREE.MathUtils.clamp(cross * 520.0, -1.0, 1.0);
-				pointerState.swirl = THREE.MathUtils.lerp(pointerState.swirl, swirlInstant, 0.24);
-				const activeInfluence = pointerState.active ? (pointerState.pressing ? 1.18 : 0.86) : 0.0;
-				const releaseInfluence = pointerState.active ? 0.0 : pointerState.release * 0.68;
-				const targetInfluence = Math.max(activeInfluence, releaseInfluence);
-				pointerState.influence = THREE.MathUtils.lerp(
-					pointerState.influence,
-					targetInfluence,
-					pointerState.active ? 0.2 : 0.06
-				);
-
-				pointerState.vx *= CURSOR_VEL_DAMP;
-				pointerState.vy *= CURSOR_VEL_DAMP;
-
-				if (!pointerState.active) {
-					const releaseSpeedDamp = THREE.MathUtils.lerp(0.94, 0.982, pointerState.release);
-					const releaseSwirlDamp = THREE.MathUtils.lerp(0.9, 0.974, pointerState.release);
-					pointerState.speed *= releaseSpeedDamp;
-					pointerState.swirl *= releaseSwirlDamp;
-				}
-			}
-
-			function getLogoScreenBounds() {
-				if (!logoWrapper || !camera) return null;
-
-				const box = new THREE.Box3().setFromObject(logoWrapper);
-				if (box.isEmpty()) return null;
-
-				const min = box.min;
-				const max = box.max;
-				const corners = [
-					new THREE.Vector3(min.x, min.y, min.z),
-					new THREE.Vector3(min.x, min.y, max.z),
-					new THREE.Vector3(min.x, max.y, min.z),
-					new THREE.Vector3(min.x, max.y, max.z),
-					new THREE.Vector3(max.x, min.y, min.z),
-					new THREE.Vector3(max.x, min.y, max.z),
-					new THREE.Vector3(max.x, max.y, min.z),
-					new THREE.Vector3(max.x, max.y, max.z)
-				];
-				let minX = Infinity;
-				let minY = Infinity;
-				let maxX = -Infinity;
-				let maxY = -Infinity;
-
-				corners.forEach((corner) => {
-					corner.project(camera);
-					minX = Math.min(minX, corner.x);
-					minY = Math.min(minY, corner.y);
-					maxX = Math.max(maxX, corner.x);
-					maxY = Math.max(maxY, corner.y);
-				});
-
-				return {
-					minX,
-					minY,
-					maxX,
-					maxY,
-					centerX: (minX + maxX) * 0.5,
-					centerY: (minY + maxY) * 0.5,
-					halfX: Math.max(0.001, (maxX - minX) * 0.5),
-					halfY: Math.max(0.001, (maxY - minY) * 0.5)
-				};
-			}
-
-			function updateLogoHoverTarget() {
-				if (!pointerState.active || poseEditMode || !raycaster || !camera || !logoMeshes.length) {
-					logoInteraction.targetHover = 0;
-					logoInteraction.targetLocalX = 0;
-					logoInteraction.targetLocalY = 0;
-					return;
-				}
-
-				const bounds = getLogoScreenBounds();
-				const padding = 0.045 + pointerState.speed * 0.02;
-				const isNearBounds = bounds
-					&& pointerState.ndcX >= bounds.minX - padding
-					&& pointerState.ndcX <= bounds.maxX + padding
-					&& pointerState.ndcY >= bounds.minY - padding
-					&& pointerState.ndcY <= bounds.maxY + padding;
-
-				raycaster.setFromCamera({ x: pointerState.ndcX, y: pointerState.ndcY }, camera);
-				const isOnMesh = raycaster.intersectObjects(logoMeshes, false).length > 0;
-				const isHovering = isOnMesh || isNearBounds;
-
-				logoInteraction.targetHover = isHovering ? 1 : 0;
-				logoInteraction.targetLocalX = isHovering && bounds
-					? THREE.MathUtils.clamp((pointerState.ndcX - bounds.centerX) / bounds.halfX, -1, 1)
-					: 0;
-				logoInteraction.targetLocalY = isHovering && bounds
-					? THREE.MathUtils.clamp((pointerState.ndcY - bounds.centerY) / bounds.halfY, -1, 1)
-					: 0;
-			}
-
-			function updateLogoInteraction(t) {
-				if (!logoWrapper) return;
-				const profile = getSceneProfile();
-
-				logoInteraction.hover = 0;
-				logoInteraction.targetHover = 0;
-				logoWrapper.position.set(
-					logoPose.px + profile.logoOffset[0],
-					logoPose.py + profile.logoOffset[1],
-					logoPose.pz + profile.logoOffset[2]
-				);
-				logoWrapper.rotation.set(logoPose.rx, logoPose.ry, logoPose.rz);
-				logoWrapper.scale.setScalar(logoBaseScale * profile.logoScale);
-
-				logoMaterials.forEach((material) => {
-					material.roughness = 0.38;
-					material.clearcoat = 0.78;
-					material.emissiveIntensity = 0.035;
-				});
-			}
-
-			function detectWebGLIssue() {
-				if (!window.WebGLRenderingContext) {
-					return "WebGL is not available in this browser.";
-				}
-
-				const probe = document.createElement("canvas");
-				const context =
-					probe.getContext("webgl", { antialias: false, alpha: false })
-					|| probe.getContext("experimental-webgl");
-
-				if (!context) {
-					return "WebGL context creation failed.";
-				}
-
-				const loseContext = context.getExtension("WEBGL_lose_context");
-				if (loseContext) {
-					loseContext.loseContext();
-				}
-
-				return null;
-			}
-
-			function getMissingPostprocessingSymbols() {
-				return REQUIRED_POSTPROCESSING_SYMBOLS.filter((symbol) => typeof THREE[symbol] === "undefined");
-			}
-
-			function runStartupChecks() {
-				if (!window.THREE || typeof THREE.WebGLRenderer === "undefined") {
-					return {
-						ok: false,
-						fatalMessage: "Three.js core script is missing. Check that three.min.js is reachable."
-					};
-				}
-
-				const webglIssue = detectWebGLIssue();
-				if (webglIssue) {
-					return {
-						ok: false,
-						fatalMessage: `${webglIssue} Open this page in a system browser with hardware acceleration enabled.`
-					};
-				}
-
-				const missingSymbols = getMissingPostprocessingSymbols();
-				canUsePostprocessing = missingSymbols.length === 0;
-
-				if (!canUsePostprocessing) {
-					showSupportMessage(
-						`Bloom disabled: missing Three.js postprocessing symbols (${missingSymbols.join(", ")}).`
-					);
-					console.warn("Post-processing scripts missing. Falling back to direct render.", missingSymbols);
-				}
-
-				return { ok: true };
-			}
-
-			function initStaticVectors() {
-				const profile = getSceneProfile();
-				clock = new THREE.Clock();
-					raycaster = new THREE.Raycaster();
-					cameraBase = new THREE.Vector3(...profile.cameraBase);
-					cameraTarget = new THREE.Vector3(...profile.cameraTarget);
-				obeliskA = new THREE.Vector2(-0.56, 0.12);
-				obeliskB = new THREE.Vector2(0.38, -0.08);
-				obeliskC = new THREE.Vector2(-0.09, 0.01);
-			}
-
-			function initRenderer() {
-				renderer = new THREE.WebGLRenderer({
-					canvas,
-					antialias: tierConfig.antialias,
-					alpha: false,
-					precision: deviceTier === 'low' ? 'mediump' : 'highp',
-					powerPreference: deviceTier === 'low' ? 'default' : 'high-performance',
-					stencil: false, // Disable stencil buffer if not needed
-					depth: true
-				});
-				renderer.outputEncoding = THREE.sRGBEncoding;
-				renderer.toneMapping = THREE.ACESFilmicToneMapping;
-				renderer.toneMappingExposure = 1.14;
-				renderer.setClearColor(0x170602, 1);
-				applyRenderQuality();
-			}
-
-			function initScene() {
-				const renderSize = getRenderSize();
-				const profile = getSceneProfile();
-				scene = new THREE.Scene();
-				scene.background = new THREE.Color(0x170602);
-				scene.fog = new THREE.FogExp2(0x341304, 0.021);
-
-				camera = new THREE.PerspectiveCamera(profile.fov, renderSize.width / renderSize.height, 0.1, 80);
-				camera.position.copy(cameraBase);
-				camera.lookAt(cameraTarget);
-			}
-
-			function syncResponsiveSceneProfile() {
-				if (!camera || !cameraBase || !cameraTarget) return;
-				const renderSize = getRenderSize();
-				const profile = getSceneProfile();
-				camera.aspect = renderSize.width / renderSize.height;
-				camera.fov = profile.fov;
-				cameraBase.set(...profile.cameraBase);
-				cameraTarget.set(...profile.cameraTarget);
-				camera.updateProjectionMatrix();
-				applyLogoPose();
-			}
-
-			function addLighting() {
-				const downKey = new THREE.DirectionalLight(0xffcc8a, 0.76);
-				downKey.position.set(-0.8, 9.5, -1.2);
-				downKey.target.position.set(0, 0, 0);
-				scene.add(downKey);
-				scene.add(downKey.target);
-
-				const rim = new THREE.DirectionalLight(0xff8a1f, 2.32);
-				rim.position.set(-5.0, 2.8, -3.9);
-				scene.add(rim);
-
-				const rearWarm = new THREE.DirectionalLight(0xff6a14, 0.96);
-				rearWarm.position.set(4.4, 1.9, -4.8);
-				scene.add(rearWarm);
-
-				const frontFill = new THREE.DirectionalLight(0xa34e1a, 0.3);
-				frontFill.position.set(3.3, 1.35, 2.8);
-				scene.add(frontFill);
-
-				const sky = new THREE.HemisphereLight(0xffa74f, 0x160602, 0.17);
-				scene.add(sky);
-
-				const warmAmbient = new THREE.AmbientLight(0x2f1204, 0.052);
-				scene.add(warmAmbient);
-			}
-
-			function createFallbackObelisks() {
-				const leftGeom = new THREE.BoxGeometry(0.84, 2.75, 0.58);
-				const rightGeom = new THREE.BoxGeometry(0.98, 3.9, 0.68);
-				const mat = new THREE.MeshStandardMaterial({
-					color: 0x000000,
-					roughness: 0.8,
-					metalness: 0.2
-				});
-
-				const left = new THREE.Mesh(leftGeom, mat);
-				left.position.set(-0.56, 0.73, 0.12);
-				left.rotation.z = -Math.PI * 0.25;
-				left.rotation.y = Math.PI * 0.08;
-
-				const right = new THREE.Mesh(rightGeom, mat);
-				right.position.set(0.38, 1.06, -0.08);
-				right.rotation.z = -Math.PI * 0.25;
-				right.rotation.y = -Math.PI * 0.08;
-
-				scene.add(left);
-				scene.add(right);
-			}
-
-				function syncObeliskUniforms() {
-					if (coreMaterial && coreMaterial.uniforms) {
-						coreMaterial.uniforms.u_obeliskA.value.copy(obeliskA);
-						coreMaterial.uniforms.u_obeliskB.value.copy(obeliskB);
-						coreMaterial.uniforms.u_obeliskC.value.copy(obeliskC);
-					}
-					if (hazeMaterial && hazeMaterial.uniforms) {
-						hazeMaterial.uniforms.u_obeliskA.value.copy(obeliskA);
-						hazeMaterial.uniforms.u_obeliskB.value.copy(obeliskB);
-						hazeMaterial.uniforms.u_obeliskC.value.copy(obeliskC);
-					}
-					if (microMaterial && microMaterial.uniforms) {
-						microMaterial.uniforms.u_obeliskA.value.copy(obeliskA);
-						microMaterial.uniforms.u_obeliskB.value.copy(obeliskB);
-						microMaterial.uniforms.u_obeliskC.value.copy(obeliskC);
-					}
-				}
-
-			async function addLogoModel() {
-				if (!THREE.GLTFLoader) {
-					console.warn("GLTFLoader not available. Falling back to primitive obelisks.");
-					createFallbackObelisks();
-					return;
-				}
-
-				const loader = new THREE.GLTFLoader();
-				await new Promise((resolve) => {
-					loader.load(
-						"./scene.glb",
-						(gltf) => {
-							const model = gltf.scene || gltf.scenes?.[0];
-							if (!model) {
-								createFallbackObelisks();
-								resolve();
-								return;
-							}
-
-							const bounds = new THREE.Box3().setFromObject(model);
-							const center = new THREE.Vector3();
-							const size = new THREE.Vector3();
-							bounds.getCenter(center);
-							bounds.getSize(size);
-
-							model.traverse((child) => {
-								if (!child.isMesh) return;
-								child.castShadow = false;
-								child.receiveShadow = false;
-								child.frustumCulled = true;
-									if (child.geometry) {
-										// Womp exports can carry split vertices; welding then recomputing normals softens jagged silhouettes.
-										let geometry = child.geometry;
-										if (THREE.BufferGeometryUtils && THREE.BufferGeometryUtils.mergeVertices) {
-											try {
-												geometry = THREE.BufferGeometryUtils.mergeVertices(geometry, WOMP_VERTEX_WELD_TOLERANCE);
-											} catch (error) {
-												console.warn("Geometry welding skipped for mesh.", error);
-											}
-										}
-										geometry.computeVertexNormals();
-										geometry.normalizeNormals();
-										child.geometry = geometry;
-									}
-									child.material = new THREE.MeshPhysicalMaterial({
-										color: 0x090401,
-										roughness: 0.38,
-										metalness: 0.68,
-										clearcoat: 0.78,
-										clearcoatRoughness: 0.2,
-										reflectivity: 0.7,
-										emissive: 0x2a1002,
-										emissiveIntensity: 0.035
-									});
-									logoMeshes.push(child);
-									logoMaterials.push(child.material);
-								});
-
-							model.position.sub(center);
-
-							logoWrapper = new THREE.Group();
-							logoWrapper.add(model);
-
-								const targetHeight = 3.34;
-								logoBaseScale = targetHeight / Math.max(size.y, 0.001);
-								logoWrapper.scale.setScalar(logoBaseScale);
-								applyLogoPose();
-							scene.add(logoWrapper);
-								updateObeliskAnchorsFromLogo();
-
-							resolve();
-						},
-						undefined,
-						(error) => {
-							console.warn("Model load failed, fallback obelisks enabled.", error);
-							showSupportMessage(
-								"Model could not be loaded via file://. Open this scene from a local server to use scene.glb."
-							);
-							createFallbackObelisks();
-							resolve();
-						}
-					);
-				});
-			}
-
-			function createOceanGridGeometry(width, depth, segX, segZ, jitter) {
-				const geometry = new THREE.PlaneBufferGeometry(width, depth, segX, segZ);
-				geometry.rotateX(-Math.PI * 0.5);
-
-				const positions = geometry.attributes.position.array;
-				const count = geometry.attributes.position.count;
-				const seeds = new Float32Array(count);
-				for (let i = 0; i < count; i += 1) {
-					const i3 = i * 3;
-					positions[i3] += (Math.random() - 0.5) * jitter;
-					positions[i3 + 2] += (Math.random() - 0.5) * jitter;
-					seeds[i] = Math.random();
-				}
-				geometry.attributes.position.needsUpdate = true;
-				geometry.setAttribute("aSeed", new THREE.BufferAttribute(seeds, 1));
-				return geometry;
-			}
-
-				function addParticleOcean() {
-					const coreGeometry = createOceanGridGeometry(23.2, 14.6, OCEAN_GRID_X, OCEAN_GRID_Z, 0.028);
-					const hazeGeometry = coreGeometry.clone();
-					const microSegX = Math.max(32, Math.floor(OCEAN_GRID_X * 0.62));
-					const microSegZ = Math.max(24, Math.floor(OCEAN_GRID_Z * 0.56));
-					const microGeometry = USE_MICRO_LAYER
-						? createOceanGridGeometry(23.2, 14.6, microSegX, microSegZ, 0.034)
-						: null;
-
-				coreMaterial = createOceanMaterial({
-					pointSize: (isTouch ? 0.68 : 0.6) * POINT_SIZE_SCALE,
-					layer: 0,
-					alphaScale: 1.36,
-					cursorRadius: CURSOR_RADIUS,
-					cursorStrength: CURSOR_STRENGTH,
-					colorDeep: "#5c2403",
-					colorBright: "#ff9a27"
-				});
-
-					hazeMaterial = createOceanMaterial({
-						pointSize: (isTouch ? 1.02 : 0.9) * POINT_SIZE_SCALE,
-						layer: 1,
-						alphaScale: 0.96,
-						cursorRadius: CURSOR_RADIUS * 0.9,
-						cursorStrength: CURSOR_STRENGTH * 0.82,
-						colorDeep: "#3b1202",
-						colorBright: "#ff7a18"
-					});
-
-					if (USE_MICRO_LAYER) {
-						microMaterial = createOceanMaterial({
-							pointSize: (isTouch ? 0.42 : 0.32) * POINT_SIZE_SCALE,
-							layer: 2,
-							alphaScale: 0.72,
-							cursorRadius: CURSOR_RADIUS * 0.76,
-							cursorStrength: CURSOR_STRENGTH * 0.58,
-							colorDeep: "#743104",
-							colorBright: "#ffb35a"
-						});
-					}
-
-				const coreOcean = new THREE.Points(coreGeometry, coreMaterial);
-				coreOcean.position.set(0, -0.62, 0);
-				coreOcean.renderOrder = 2;
-
-					const hazeOcean = new THREE.Points(hazeGeometry, hazeMaterial);
-					hazeOcean.position.copy(coreOcean.position);
-					hazeOcean.renderOrder = 1;
-
-					scene.add(hazeOcean);
-					scene.add(coreOcean);
-
-					if (USE_MICRO_LAYER && microMaterial && microGeometry) {
-						const microOcean = new THREE.Points(microGeometry, microMaterial);
-						microOcean.position.copy(coreOcean.position);
-						microOcean.renderOrder = 3;
-						scene.add(microOcean);
-					}
-
-					perfState.particleCount = coreGeometry.attributes.position.count
-						+ hazeGeometry.attributes.position.count
-						+ (microGeometry ? microGeometry.attributes.position.count : 0);
-					updatePerfHud();
-				}
-
-			function addAtmosphericShafts() {
-				if (!ENABLE_ATMOSPHERIC_SHAFTS) return;
-
-				const shaftTex = createShaftTexture(64, 1024);
-				shaftGroup = new THREE.Group();
-
-				function createShaft(config) {
-					const material = new THREE.MeshBasicMaterial({
-						map: shaftTex,
-						color: 0xb25a17,
-						transparent: true,
-						opacity: config.opacity,
-						blending: THREE.AdditiveBlending,
-						depthWrite: false,
-						depthTest: true,
-						side: THREE.DoubleSide
-					});
-
-					const shaft = new THREE.Mesh(new THREE.PlaneGeometry(config.w, config.h), material);
-					shaft.position.set(config.x, config.y, config.z);
-					shaft.rotation.y = config.ry;
-					shaft.rotation.z = config.rz;
-					shaft.userData.baseOpacity = config.opacity;
-					shaft.userData.baseRz = config.rz;
-					shaftGroup.add(shaft);
-				}
-
-					const shafts = [
-						{ x: -1.9, y: 2.0, z: -2.6, w: 2.2, h: 5.8, ry: 0.28, rz: -0.19, opacity: 0.03 },
-						{ x: -1.25, y: 1.9, z: -2.3, w: 1.8, h: 5.2, ry: 0.18, rz: -0.16, opacity: 0.022 },
-						{ x: -0.6, y: 1.7, z: -2.0, w: 1.5, h: 4.6, ry: 0.12, rz: -0.12, opacity: 0.016 }
-					];
-
-				shafts.slice(0, SHAFT_COUNT).forEach((config) => createShaft(config));
-
-				scene.add(shaftGroup);
-			}
-
-			function initComposer() {
-				// Force skip postprocessing for low-end devices
-				if (FORCE_SKIP_POSTPROCESSING) {
-					useComposer = false;
-					composer = null;
-					bloomPass = null;
-					cinematicPass = null;
-					fxaaPass = null;
-					console.log('Postprocessing disabled for device tier:', deviceTier);
-					return;
-				}
-				
-				if (!canUsePostprocessing) {
-					useComposer = false;
-					composer = null;
-					bloomPass = null;
-					cinematicPass = null;
-					fxaaPass = null;
-					return;
-				}
-
-				try {
-					const renderSize = getRenderSize();
-					let composerTarget = null;
-					
-					// Only use MSAA on medium/high tier devices
-					if (deviceTier !== 'low' && !isLowSpecMobile && renderer.capabilities?.isWebGL2 && THREE.WebGLMultisampleRenderTarget) {
-						composerTarget = new THREE.WebGLMultisampleRenderTarget(
-							renderSize.width,
-							renderSize.height,
-							{
-								format: THREE.RGBAFormat,
-								type: THREE.UnsignedByteType
-							}
-						);
-						composerTarget.texture.encoding = THREE.sRGBEncoding;
-						composerTarget.samples = deviceTier === 'high' ? 4 : 2;
-					}
-
-					composer = composerTarget
-						? new THREE.EffectComposer(renderer, composerTarget)
-						: new THREE.EffectComposer(renderer);
-					if (typeof composer.setPixelRatio === "function") {
-						composer.setPixelRatio(renderer.getPixelRatio());
-					}
-					composer.addPass(new THREE.RenderPass(scene, camera));
-
-					bloomPass = new THREE.UnrealBloomPass(
-						new THREE.Vector2(renderSize.width, renderSize.height),
-						BLOOM_STRENGTH,
-						BLOOM_RADIUS,
-						BLOOM_THRESHOLD
-					);
-					composer.addPass(bloomPass);
-
-					cinematicPass = new THREE.ShaderPass(cinematicGradeShader);
-					composer.addPass(cinematicPass);
-					updateCinematicResolution();
-
-					// Skip FXAA on low-tier devices (already skipped via FORCE_SKIP_POSTPROCESSING)
-					fxaaPass = new THREE.ShaderPass(THREE.FXAAShader);
-					composer.addPass(fxaaPass);
-					updateFxaaResolution();
-
-					useComposer = true;
-					applyRenderQuality();
-				} catch (error) {
-					useComposer = false;
-					composer = null;
-					bloomPass = null;
-					cinematicPass = null;
-					fxaaPass = null;
-					console.warn("Post-processing disabled.", error);
-				}
-			}
-
-			function resize() {
-				syncResponsiveSceneProfile();
-				applyRenderQuality();
-			}
-
-			function animate() {
-				requestAnimationFrame(animate);
-
-				const now = performance.now();
-				const dt = now - perfState.lastFrameTime;
-				perfState.lastFrameTime = now;
-				perfState.sampleMs += dt;
-				perfState.sampleFrames += 1;
-				perfState.totalMs += dt;
-				perfState.totalFrames += 1;
-
-				if (perfState.sampleMs >= 500) {
-					perfState.fps = (perfState.sampleFrames * 1000) / Math.max(1, perfState.sampleMs);
-					perfState.sampleMs = 0;
-					perfState.sampleFrames = 0;
-					updatePerfHud();
-				}
-
-				settleAdaptiveQuality();
-				updateCursorState();
-				const cursorVelX = THREE.MathUtils.clamp(pointerState.smoothVx * 26.0 + pointerState.vx * 0.35, -2.4, 2.4);
-				const cursorVelY = THREE.MathUtils.clamp(pointerState.smoothVy * 26.0 + pointerState.vy * 0.35, -2.4, 2.4);
-
-					const t = clock.getElapsedTime();
-					coreMaterial.uniforms.u_time.value = t;
-					coreMaterial.uniforms.u_cursor.value.set(pointerState.x, pointerState.y);
-					coreMaterial.uniforms.u_cursorVelocity.value.set(cursorVelX, cursorVelY);
-					coreMaterial.uniforms.u_breezeTime.value = t * 0.65;
-					coreMaterial.uniforms.u_pointerSpeed.value = pointerState.speed;
-					coreMaterial.uniforms.u_pointerSwirl.value = pointerState.swirl;
-					coreMaterial.uniforms.u_cursorInfluence.value = pointerState.influence;
-					hazeMaterial.uniforms.u_time.value = t;
-					hazeMaterial.uniforms.u_cursor.value.set(pointerState.x, pointerState.y);
-					hazeMaterial.uniforms.u_cursorVelocity.value.set(cursorVelX, cursorVelY);
-					hazeMaterial.uniforms.u_breezeTime.value = t * 0.65;
-					hazeMaterial.uniforms.u_pointerSpeed.value = pointerState.speed;
-					hazeMaterial.uniforms.u_pointerSwirl.value = pointerState.swirl;
-					hazeMaterial.uniforms.u_cursorInfluence.value = pointerState.influence;
-					if (microMaterial) {
-						microMaterial.uniforms.u_time.value = t;
-						microMaterial.uniforms.u_cursor.value.set(pointerState.x, pointerState.y);
-						microMaterial.uniforms.u_cursorVelocity.value.set(cursorVelX, cursorVelY);
-						microMaterial.uniforms.u_breezeTime.value = t * 0.65;
-						microMaterial.uniforms.u_pointerSpeed.value = pointerState.speed;
-						microMaterial.uniforms.u_pointerSwirl.value = pointerState.swirl;
-						microMaterial.uniforms.u_cursorInfluence.value = pointerState.influence;
-					}
-
-				const cursorPanX = (pointerState.x - 0.5) * 2;
-				const cursorPanY = (pointerState.y - 0.5) * 2;
-				const cameraBreathX = Math.sin(t * 0.05) * 0.07;
-				const cameraBreathY = Math.cos(t * 0.045) * 0.04;
-				const cameraBreathZ = Math.cos(t * 0.055) * 0.06;
-				const panProfile = getSceneProfile().pan;
-
-				camera.position.set(
-					cameraBase.x + cameraBreathX + cursorPanX * panProfile.x,
-					cameraBase.y + cameraBreathY + cursorPanY * panProfile.y,
-					cameraBase.z + cameraBreathZ - cursorPanX * panProfile.zx - cursorPanY * panProfile.zy
-				);
-				camera.lookAt(cameraTarget);
-
-				if (logoWrapper) {
-					updateLogoInteraction(t);
-				}
-
-				if (shaftGroup) {
-					shaftGroup.children.forEach((shaft, index) => {
-						shaft.material.opacity = shaft.userData.baseOpacity * (0.78 + 0.22 * Math.sin(t * 0.36 + index * 1.6));
-						shaft.rotation.z = shaft.userData.baseRz + Math.sin(t * 0.14 + index) * 0.025;
-					});
-				}
-
-				if (useComposer && composer) {
-					composer.render();
-				} else {
-					renderer.render(scene, camera);
-				}
-			}
-
-			async function boot() {
-				const startup = runStartupChecks();
-				if (!startup.ok) {
-					throw new Error(startup.fatalMessage);
-				}
-
-				// Log device capability for debugging
-				console.log(`Device tier: ${deviceTier} | Memory: ${navigator.deviceMemory || 'unknown'}GB | Cores: ${navigator.hardwareConcurrency || 'unknown'}`);
-				console.log(`Particle grid: ${OCEAN_GRID_X}x${OCEAN_GRID_Z} = ${(OCEAN_GRID_X * OCEAN_GRID_Z).toLocaleString()} particles`);
-				console.log(`Postprocessing: ${!FORCE_SKIP_POSTPROCESSING ? 'enabled' : 'disabled'}`);
-
-				initStaticVectors();
-				initRenderer();
-				initScene();
-				addLighting();
-				await addLogoModel();
-				addParticleOcean();
-				syncObeliskUniforms();
-				addAtmosphericShafts();
-				initComposer();
-				setPerfOverlayVisibility();
-				window.addEventListener("keydown", onPoseKeydown);
-				window.addEventListener("pointermove", onPointerMove, { passive: true });
-				window.addEventListener("pointerdown", onPointerDown, { passive: true });
-				window.addEventListener("pointerup", onPointerRelease, { passive: true });
-				window.addEventListener("pointercancel", onPointerRelease, { passive: true });
-				canvas.addEventListener("pointerleave", onPointerRelease, { passive: true });
-				window.addEventListener("resize", resize);
-				window.addEventListener("orientationchange", resize);
-				window.visualViewport?.addEventListener("resize", resize, { passive: true });
-				animate();
-			}
-
-			boot().catch((error) => {
-				showSupportMessage(
-					error && error.message
-						? `This scene could not initialize. ${error.message}`
-						: "This scene could not initialize. Verify WebGL support and required Three.js postprocessing scripts."
-				);
-				console.error(error);
 			});
-		})();
+
+			const points = new THREE.Points(geo, mat);
+			scene.add(points);
+			return { points, mat };
+		}
+		let particles = buildParticles();
+
+		function rebuildParticles() {
+			scene.remove(particles.points);
+			particles.points.geometry.dispose();
+			particles.mat.dispose();
+			particles = buildParticles();
+		}
+
+		// --- load the model (or fall back to a primitive) ----------------
+		let modelReady = false;
+
+		let coreMaxDim = 1;
+		function frameCore() {
+			// center the model, then size it via applyModelScale()
+			const box = new THREE.Box3().setFromObject(core);
+			const size = new THREE.Vector3();
+			const center = new THREE.Vector3();
+			box.getSize(size);
+			box.getCenter(center);
+			coreMaxDim = Math.max(size.x, size.y, size.z) || 1;
+			core.children.forEach((c) => c.position.sub(center));
+			applyModelScale();
+		}
+
+		function applyModelScale() {
+			// Uniform fit, then an intentional Z-flatten so the slim slabs read
+			// like the reference (depthScale = 1.0 keeps the true scene.glb depth).
+			const s = config.modelScale / coreMaxDim;
+			core.scale.set(s, s, s * config.depthScale);
+		}
+
+		// --- glass-through-glass: split fused mesh + multi-pass transmission --
+		// scene.glb is ONE fused mesh of both slabs. MeshTransmissionMaterial's
+		// multi-pass refraction hides "the glass mesh" to capture what's behind
+		// it — but if both slabs are one mesh, hiding it hides both and they
+		// can't refract each other. So we split the geometry into connected
+		// components (one Mesh per slab), each with its own material + render
+		// target, and capture each slab's backdrop separately in the render loop.
+
+		// Split a fused geometry into connected components (separate slabs).
+		// Lifted from glass-reference.html: weld coincident verts by quantized
+		// position, union-find over shared triangles, one BufferGeometry per group.
+		function splitConnected(geometry) {
+			const pos = geometry.attributes.position;
+			const nrm = geometry.attributes.normal || null;
+			const idx = geometry.index ? geometry.index.array : null;
+			const triCount = idx ? idx.length / 3 : pos.count / 3;
+			const tri = (t) => idx ? [idx[t*3], idx[t*3+1], idx[t*3+2]] : [t*3, t*3+1, t*3+2];
+
+			const q = 1e-4, map = new Map(), weld = new Int32Array(pos.count);
+			let next = 0;
+			for (let i = 0; i < pos.count; i++) {
+				const k = Math.round(pos.getX(i)/q)+'_'+Math.round(pos.getY(i)/q)+'_'+Math.round(pos.getZ(i)/q);
+				let r = map.get(k); if (r === undefined) { r = next++; map.set(k, r); }
+				weld[i] = r;
+			}
+			const parent = new Int32Array(next); for (let i=0;i<next;i++) parent[i]=i;
+			const find = a => { while (parent[a]!==a){ parent[a]=parent[parent[a]]; a=parent[a]; } return a; };
+			const uni  = (a,b)=>{ a=find(a); b=find(b); if(a!==b) parent[a]=b; };
+			for (let t=0;t<triCount;t++){ const [a,b,c]=tri(t); uni(weld[a],weld[b]); uni(weld[b],weld[c]); }
+			const groups = new Map();
+			for (let t=0;t<triCount;t++){ const root=find(weld[tri(t)[0]]); (groups.get(root)||groups.set(root,[]).get(root)).push(t); }
+			const geos = [];
+			for (const tris of groups.values()) {
+				const p = new Float32Array(tris.length*9);
+				const nn = nrm ? new Float32Array(tris.length*9) : null;
+				let o = 0;
+				for (const t of tris) { const v = tri(t);
+					for (let k=0;k<3;k++){ const vi=v[k];
+						p[o]=pos.getX(vi); p[o+1]=pos.getY(vi); p[o+2]=pos.getZ(vi);
+						if (nn){ nn[o]=nrm.getX(vi); nn[o+1]=nrm.getY(vi); nn[o+2]=nrm.getZ(vi); }
+						o+=3;
+					}
+				}
+				const g = new THREE.BufferGeometry();
+				g.setAttribute('position', new THREE.BufferAttribute(p,3));
+				if (nn) g.setAttribute('normal', new THREE.BufferAttribute(nn,3)); else g.computeVertexNormals();
+				geos.push(g);
+			}
+			return geos;
+		}
+
+		function makeGlass() {
+			const m = new MeshTransmissionMaterial(10, false);
+			m.transmission = 1; m._transmission = 1;
+			m.thickness = 0.25; m.ior = 1.5; m.roughness = 0.0;   // optical depth only (NOT geometry); lower = slimmer-looking glass
+			m.chromaticAberration = 0.04; m.anisotropicBlur = 0.1;
+			m.clearcoat = 1; m.clearcoatRoughness = 0;
+			m.attenuationColor = new THREE.Color(0xffd9a8); m.attenuationDistance = 4;
+			m.envMapIntensity = 1.6;
+			m.color = new THREE.Color(0xffffff);
+			return m;
+		}
+
+		// Each slab gets its own mesh + material + refraction buffer (fbo).
+		const glassMeshes = [];          // each: { mesh, mat, fbo }
+		const discard = new DiscardMaterial();
+
+		function addSlab(geo) {
+			const mat = makeGlass();
+			const mesh = new THREE.Mesh(geo, mat);
+			const fbo = new THREE.WebGLRenderTarget(window.innerWidth, window.innerHeight, { type: THREE.HalfFloatType });
+			mat.buffer = fbo.texture;
+			core.add(mesh);
+			glassMeshes.push({ mesh, mat, fbo });
+		}
+
+		// Dispose + remove all current slabs (used before loading a new model).
+		function clearSlabs() {
+			for (const g of glassMeshes) {
+				core.remove(g.mesh);
+				g.mesh.geometry.dispose();
+				g.mat.dispose();
+				g.fbo.dispose();
+			}
+			glassMeshes.length = 0;
+		}
+
+		// Turn ANY loaded glTF scene into glass slabs: bake each mesh's world
+		// transform into its geometry, split into connected components, and add
+		// each as its own glass slab. Works for the fused logo and for arbitrary
+		// uploaded models (which may have several meshes).
+		function buildGlassFrom(gltfScene) {
+			clearSlabs();
+			gltfScene.updateMatrixWorld(true);
+			const geos = [];
+			gltfScene.traverse((o) => {
+				if (!o.isMesh || !o.geometry) return;
+				const g = o.geometry.clone();
+				if (!g.attributes.normal) g.computeVertexNormals();
+				g.applyMatrix4(o.matrixWorld);   // keep multi-mesh layout
+				splitConnected(g).forEach((part) => geos.push(part));
+				g.dispose();
+			});
+			if (!geos.length) { addFallback(); return; }
+			geos.forEach(addSlab);
+			frameCore();
+			modelReady = true;
+		}
+
+		function addFallback() {
+			clearSlabs();
+			addSlab(new THREE.TorusKnotGeometry(1, 0.34, 180, 32));
+			frameCore();
+			modelReady = true;
+		}
+
+		new GLTFLoader().load(
+			"scene.glb",
+			(gltf) => buildGlassFrom(gltf.scene),
+			undefined,
+			() => {
+				noticeEl.classList.add("show");
+				noticeEl.innerHTML = "Couldn't load <code>scene.glb</code>. " +
+					"Open this page from a local server (e.g. <code>python3 -m http.server</code>) " +
+					"so the model can load. Showing a placeholder for now.";
+				addFallback();
+			}
+		);
+
+		// --- ground under the logo ---------------------------------------
+		// model.glb is a rocky terrain (RealityCapture scan). It lives in the
+		// scene inside its own pivot so it can spin in place (driven by scroll
+		// like the logo), is lit by the env, and is refracted by the glass
+		// above it. Auto-fit: scale so its largest horizontal span ≈ GROUND_SPAN,
+		// center it in the pivot, then the pivot is placed/scaled/spun by the
+		// control-panel sliders via applyGround().
+		const GROUND_SPAN = 22;     // base world units across (x/z) before the size slider
+		const GROUND_TOP_Y = -2.2;  // base height of the ground's top, just below the logo
+		const groundPivot = new THREE.Group();
+		scene.add(groundPivot);
+		let groundReady = false;
+		let groundHalfH = 0;        // half-height after auto-fit (for top alignment)
+
+		function applyGround() {
+			if (!groundReady) return;
+			groundPivot.scale.setScalar(config.groundScale);
+			groundPivot.position.set(
+				config.groundX,
+				GROUND_TOP_Y - groundHalfH * config.groundScale + config.groundY,
+				config.groundZ
+			);
+		}
+
+		let groundObj = null;
+
+		// Remove + dispose the current ground before loading a replacement.
+		function clearGround() {
+			if (!groundObj) return;
+			groundPivot.remove(groundObj);
+			groundObj.traverse((o) => {
+				if (!o.isMesh) return;
+				o.geometry?.dispose();
+				if (o.material) { o.material.map?.dispose?.(); o.material.dispose(); }
+			});
+			groundObj = null;
+			groundReady = false;
+		}
+
+		// Load a ground model from a URL (the default model.glb or an upload):
+		// auto-fit, center on the pivot, and give untextured scans a dark rock
+		// look. Replaces whatever ground is currently shown.
+		function loadGround(url, onError) {
+			new GLTFLoader().load(
+				url,
+				(gltf) => {
+					clearGround();
+					const ground = gltf.scene;
+					let box = new THREE.Box3().setFromObject(ground);
+					const size = box.getSize(new THREE.Vector3());
+					const span = Math.max(size.x, size.z) || 1;
+					const fit = GROUND_SPAN / span;
+					ground.scale.setScalar(fit);
+
+					// center the geometry on the pivot origin so it spins in place
+					box = new THREE.Box3().setFromObject(ground);
+					ground.position.sub(box.getCenter(new THREE.Vector3()));
+					groundHalfH = size.y * fit / 2;
+
+					// Textured meshes → crisp/HD: max anisotropy (sharp at grazing
+					// angles), correct color space, trilinear mipmaps. Untextured
+					// meshes (e.g. model.glb's missing diffuse) get a dark rough
+					// rock look so they aren't flat white.
+					const maxAniso = renderer.capabilities.getMaxAnisotropy();
+					ground.traverse((o) => {
+						if (!o.isMesh || !o.material) return;
+						const m = o.material;
+						// a real texture (not the 1×1 dummy from a missing file)
+						const realTex = m.map && m.map.image && m.map.image.width > 2;
+						if (realTex) {
+							m.map.anisotropy = maxAniso;
+							m.map.colorSpace = THREE.SRGBColorSpace;
+							m.map.generateMipmaps = true;
+							m.map.minFilter = THREE.LinearMipmapLinearFilter;
+							m.map.needsUpdate = true;
+						} else {
+							m.map = null;
+							m.color = new THREE.Color(0x4a3a2c);
+							m.roughness = 1.0;
+							m.metalness = 0.0;
+							m.envMapIntensity = 0.6;
+						}
+					});
+
+					groundPivot.add(ground);
+					groundObj = ground;
+					groundReady = true;
+					applyGround();
+					URL.revokeObjectURL(url);   // no-op for non-blob URLs
+				},
+				undefined,
+				(e) => { URL.revokeObjectURL(url); if (onError) onError(e); }
+			);
+		}
+
+		loadGround("model.glb", () => console.warn("[ground] couldn't load model.glb (serve over http)."));
+
+		// Replace the GROUND (bottom) model live from a user-picked file.
+		function loadGroundFile(file) {
+			if (!file) return;
+			loadGround(URL.createObjectURL(file), () => {
+				noticeEl.classList.add("show");
+				noticeEl.innerHTML = "Couldn't read that file — make sure it's a valid <code>.glb</code> or <code>.gltf</code>.";
+				setTimeout(() => noticeEl.classList.remove("show"), 4000);
+			});
+		}
+
+		// --- scroll progress bar -----------------------------------------
+		function updateOverlay(p) {
+			progressEl.style.transform = `scaleX(${p})`;
+		}
+
+		// --- post-processing pipeline ------------------------------------
+		// RenderPass → Bloom → DoF(Bokeh) → Grade(god-rays + vignette + chromatic
+		// aberration + film grain/dither) → OutputPass (tone map + sRGB).
+		const composer = new EffectComposer(renderer);
+		composer.addPass(new RenderPass(scene, camera));
+
+		const bloomPass = new UnrealBloomPass(
+			new THREE.Vector2(window.innerWidth, window.innerHeight),
+			config.bloom, 0.6, 0.85   // strength, radius, threshold
+		);
+		composer.addPass(bloomPass);
+
+		const bokehPass = new BokehPass(scene, camera, { focus: 9.0, aperture: 0.0006, maxblur: 0.01 });
+		composer.addPass(bokehPass);
+
+		// Grade pass: god-rays (radial light scattering toward the sun), vignette,
+		// chromatic aberration, and animated grain + dither (also breaks banding).
+		const gradePass = new ShaderPass({
+			uniforms: {
+				tDiffuse: { value: null },
+				uTime: { value: 0 },
+				uSun: { value: new THREE.Vector2(0.5, 0.5) },   // sun screen pos (0..1)
+				uGodrays: { value: config.godrays },
+				uGrain: { value: config.grain },
+				uSat: { value: config.saturation },
+				uAspect: { value: window.innerWidth / window.innerHeight }
+			},
+			vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+			fragmentShader: `
+				uniform sampler2D tDiffuse;
+				uniform float uTime, uGodrays, uGrain, uAspect, uSat;
+				uniform vec2 uSun;
+				varying vec2 vUv;
+				float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+				void main(){
+					vec2 uv = vUv;
+					// chromatic aberration — grows toward the edges
+					vec2 d = uv - 0.5;
+					float r2 = dot(d, d);
+					vec2 off = d * r2 * 0.06;
+					vec3 col;
+					col.r = texture2D(tDiffuse, uv + off).r;
+					col.g = texture2D(tDiffuse, uv).g;
+					col.b = texture2D(tDiffuse, uv - off).b;
+
+					// volumetric god-rays: march toward the sun, accumulate brightness
+					if (uGodrays > 0.001) {
+						vec2 dir = (uSun - uv);
+						float rays = 0.0, decay = 1.0;
+						vec2 step = dir * (1.0 / 40.0);
+						vec2 p = uv;
+						for (int i = 0; i < 40; i++){
+							p += step;
+							vec3 s = texture2D(tDiffuse, p).rgb;
+							rays += max(s.r + s.g + s.b - 1.2, 0.0) * decay;
+							decay *= 0.96;
+						}
+						rays /= 40.0;
+						col += vec3(1.0, 0.7, 0.4) * rays * uGodrays * 3.0;
+					}
+
+					// cold desaturated grade: pull toward luminance, tint cool
+					float lum = dot(col, vec3(0.299, 0.587, 0.114));
+					col = mix(vec3(lum), col, uSat);
+					col *= vec3(0.93, 0.97, 1.06);
+
+					// vignette
+					col *= smoothstep(1.15, 0.35, length(d * vec2(uAspect, 1.0)));
+
+					// film grain + dither (breaks gradient banding)
+					float g = hash(uv * vec2(1920.0, 1080.0) + uTime) - 0.5;
+					col += g * uGrain;
+
+					gl_FragColor = vec4(col, 1.0);
+				}
+			`
+		});
+		composer.addPass(gradePass);
+		composer.addPass(new OutputPass());
+
+		// project the env's bright glow to screen space for the god-rays origin
+		const _sun = new THREE.Vector3();
+		const _sunFwd = new THREE.Vector3();
+
+		// --- render loop --------------------------------------------------
+		const clock = new THREE.Clock();
+		let lastElapsed = 0;
+		function tick() {
+			const t = clock.getElapsedTime();
+			const dt = Math.min(0.05, t - lastElapsed);
+			lastElapsed = t;
+			flakeTime += dt * config.glowSpeed;   // glow/flake speed slider
+
+			// smooth the scroll value for inertial rotation
+			easedProgress += (scrollProgress - easedProgress) * 0.08;
+			pointer.x += (pointer.tx - pointer.x) * 0.05;
+			pointer.y += (pointer.ty - pointer.y) * 0.05;
+
+			if (modelReady) {
+				// scroll scrubs rotationTurns full turns; pointer adds parallax tilt
+				core.rotation.y = easedProgress * Math.PI * config.rotationTurns + pointer.x * 0.4;
+				core.rotation.x = Math.sin(easedProgress * Math.PI * 2) * 0.25 - pointer.y * 0.25;
+			}
+
+			// ground spins in place, driven by scroll (like the logo)
+			if (groundReady) {
+				groundPivot.rotation.y = easedProgress * Math.PI * config.groundTurns;
+			}
+
+			// rotate the sky + environment so the warm glow sweeps through view
+			// (the lively feel from orbiting in glass-reference):
+			//  - scroll spin (skyTurns) at its OWN rate, distinct from the logo
+			//  - constant drift (skyDrift) so it moves even when idle
+			//  - a touch of OPPOSITE pointer influence vs the logo → parallax depth
+			// environmentRotation tracks it so reflections stay in sync.
+			scene.backgroundRotation.y =
+				easedProgress * Math.PI * config.skyTurns + t * config.skyDrift - pointer.x * 0.15;
+			scene.environmentRotation.y = scene.backgroundRotation.y;
+
+			// particles slowly counter-rotate and react to scroll
+			particles.points.rotation.y = -easedProgress * Math.PI * 1.5 - t * 0.02;
+			particles.mat.uniforms.u_time.value = flakeTime;
+
+			// gentle camera dolly through the scroll
+			camera.position.z = config.cameraDist - easedProgress * 2.2;
+			camera.position.x = pointer.x * 0.6;
+			camera.position.y = 0.3 + pointer.y * 0.4;   // keep the downward tilt so the warm gradient fills the frame
+			camera.lookAt(0, 0, 0);
+
+			updateOverlay(easedProgress);
+
+			// drifting mist + tumbling rock debris
+			mistLayers.forEach((m) => {
+				m.position.x = m.userData.baseX + Math.sin(t * 0.05 + m.userData.seed) * 2.0;
+				m.material.opacity = 0.045 + 0.03 * (0.5 + 0.5 * Math.sin(t * 0.2 + m.userData.seed));
+			});
+			updateDebris(t);
+
+			// light beam + sparkle burst
+			beamMat.opacity = config.beam;
+			sparkleMat.uniforms.u_time.value = t;
+			sparkleMat.uniforms.u_amp.value = config.sparkle;
+
+			// god-rays origin = the env glow projected to screen; fade when it's
+			// not facing the camera; feed all post uniforms.
+			const ga = scene.backgroundRotation.y;
+			_sun.set(-Math.sin(ga), -0.15, -Math.cos(ga)).normalize();
+			const sunFacing = _sun.dot(_sunFwd.set(0, 0, 0).sub(camera.position).normalize());
+			_sun.multiplyScalar(50).add(camera.position).project(camera);
+			gradePass.uniforms.uSun.value.set(_sun.x * 0.5 + 0.5, _sun.y * 0.5 + 0.5);
+			gradePass.uniforms.uGodrays.value = config.godrays * THREE.MathUtils.smoothstep(sunFacing, 0.1, 0.7);
+			gradePass.uniforms.uGrain.value = config.grain;
+			gradePass.uniforms.uSat.value = config.saturation;
+			gradePass.uniforms.uTime.value = t;
+			scene.fog.density = config.fog;
+			figure.visible = config.figure;
+			bloomPass.strength = config.bloom;
+			bokehPass.uniforms["focus"].value = camera.position.length();   // keep the logo in focus
+			bokehPass.uniforms["maxblur"].value = config.dof * 0.015;
+
+			// Multi-pass transmission: for each slab, hide ONLY that slab (swap
+			// to DiscardMaterial) and render the rest of the scene — including the
+			// other slabs — into its buffer, so the front slab refracts the back
+			// one. Then restore and do the final render. NoToneMapping for the
+			// buffer passes (the captured texture must stay linear).
+			const oldTone = renderer.toneMapping;
+			for (const g of glassMeshes) {
+				g.mat.time = t;
+				g.mesh.material = discard;
+				renderer.toneMapping = THREE.NoToneMapping;
+				renderer.setRenderTarget(g.fbo);
+				renderer.render(scene, camera);
+				renderer.setRenderTarget(null);
+				renderer.toneMapping = oldTone;
+				g.mesh.material = g.mat;   // restore; it samples g.fbo
+			}
+
+			composer.render();   // scene → bloom → DoF → grade(god-rays/grain/vignette/CA) → output
+			requestAnimationFrame(tick);
+		}
+
+		// --- events -------------------------------------------------------
+		window.addEventListener("scroll", readScroll, { passive: true });
+		window.addEventListener("resize", () => {
+			camera.aspect = window.innerWidth / window.innerHeight;
+			camera.updateProjectionMatrix();
+			renderer.setSize(window.innerWidth, window.innerHeight);
+			composer.setSize(window.innerWidth, window.innerHeight);
+			bloomPass.setSize(window.innerWidth, window.innerHeight);
+			gradePass.uniforms.uAspect.value = window.innerWidth / window.innerHeight;
+			glassMeshes.forEach((g) => g.fbo.setSize(window.innerWidth, window.innerHeight));
+			particles.mat.uniforms.u_size.value = config.particleSize * renderer.getPixelRatio();
+			readScroll();
+		});
+		window.addEventListener("pointermove", (e) => {
+			pointer.tx = (e.clientX / window.innerWidth) * 2 - 1;
+			pointer.ty = -((e.clientY / window.innerHeight) * 2 - 1);
+		}, { passive: true });
+
+		// --- upload: file picker + drag-and-drop to swap the GROUND live ---
+		document.getElementById("upload").addEventListener("change", (e) => {
+			loadGroundFile(e.target.files[0]);
+		});
+		window.addEventListener("dragover", (e) => e.preventDefault());
+		window.addEventListener("drop", (e) => {
+			e.preventDefault();
+			loadGroundFile(e.dataTransfer.files[0]);
+		});
+
+		// --- control panel wiring ----------------------------------------
+		const panel = document.getElementById("panel");
+		document.getElementById("panelToggle").addEventListener("click", () => {
+			panel.classList.toggle("collapsed");
+		});
+
+		// Copy the current control values (config) to the clipboard as a JS
+		// object literal, so a tuned look can be saved / pasted back in.
+		const copyBtn = document.getElementById("copyBtn");
+		copyBtn.addEventListener("click", () => {
+			const text = "{\n" +
+				Object.entries(config).map(([k, v]) => `\t${k}: ${v},`).join("\n") +
+				"\n}";
+			navigator.clipboard.writeText(text).then(() => {
+				copyBtn.textContent = "Copied!";
+				setTimeout(() => (copyBtn.textContent = "Copy settings"), 1200);
+			}).catch(() => {
+				copyBtn.textContent = "Copy failed";
+				setTimeout(() => (copyBtn.textContent = "Copy settings"), 1200);
+			});
+		});
+
+		function bindSlider(id, valId, onChange, fmt) {
+			const slider = document.getElementById(id);
+			const valEl = document.getElementById(valId);
+			slider.addEventListener("input", () => {
+				const v = parseFloat(slider.value);
+				valEl.textContent = fmt(v);
+				onChange(v);
+			});
+		}
+
+		bindSlider("s-count", "v-count", (v) => {
+			config.particleCount = Math.round(v);
+			rebuildParticles();
+		}, (v) => String(Math.round(v)));
+
+		bindSlider("s-glow", "v-glow", (v) => {
+			config.glowSpeed = v;
+		}, (v) => v.toFixed(2) + "×");
+
+		bindSlider("s-size", "v-size", (v) => {
+			config.particleSize = v;
+			particles.mat.uniforms.u_size.value = v * renderer.getPixelRatio();
+		}, (v) => String(Math.round(v)));
+
+		bindSlider("s-scale", "v-scale", (v) => {
+			config.modelScale = v;
+			applyModelScale();
+		}, (v) => v.toFixed(1));
+
+		bindSlider("s-cam", "v-cam", (v) => { config.cameraDist = v; }, (v) => v.toFixed(1));
+
+		bindSlider("s-depth", "v-depth", (v) => {
+			config.depthScale = v;
+			applyModelScale();
+		}, (v) => v.toFixed(2));
+
+		bindSlider("s-rot", "v-rot", (v) => {
+			config.rotationTurns = v;
+		}, (v) => v.toFixed(1));
+
+		bindSlider("s-gx", "v-gx", (v) => { config.groundX = v; applyGround(); }, (v) => v.toFixed(1));
+		bindSlider("s-gy", "v-gy", (v) => { config.groundY = v; applyGround(); }, (v) => v.toFixed(1));
+		bindSlider("s-gz", "v-gz", (v) => { config.groundZ = v; applyGround(); }, (v) => v.toFixed(1));
+		bindSlider("s-gscale", "v-gscale", (v) => { config.groundScale = v; applyGround(); }, (v) => v.toFixed(2));
+		bindSlider("s-gturns", "v-gturns", (v) => { config.groundTurns = v; }, (v) => v.toFixed(1));
+		bindSlider("s-sky", "v-sky", (v) => { config.skyTurns = v; }, (v) => v.toFixed(1));
+		bindSlider("s-skydrift", "v-skydrift", (v) => { config.skyDrift = v; }, (v) => v.toFixed(2));
+		bindSlider("s-haze", "v-haze", (v) => { config.haze = v; hazeMat.opacity = v; }, (v) => v.toFixed(2));
+		bindSlider("s-bloom", "v-bloom", (v) => { config.bloom = v; }, (v) => v.toFixed(2));
+		bindSlider("s-dof", "v-dof", (v) => { config.dof = v; }, (v) => v.toFixed(2));
+		bindSlider("s-godrays", "v-godrays", (v) => { config.godrays = v; }, (v) => v.toFixed(2));
+		bindSlider("s-grain", "v-grain", (v) => { config.grain = v; }, (v) => v.toFixed(2));
+		bindSlider("s-debris", "v-debris", (v) => { config.debris = Math.round(v); }, (v) => String(Math.round(v)));
+		bindSlider("s-beam", "v-beam", (v) => { config.beam = v; }, (v) => v.toFixed(2));
+		bindSlider("s-sparkle", "v-sparkle", (v) => { config.sparkle = v; }, (v) => v.toFixed(2));
+		bindSlider("s-terrain", "v-terrain", (v) => { config.terrain = v; applyTerrain(); }, (v) => v.toFixed(2));
+		bindSlider("s-fog", "v-fog", (v) => { config.fog = v; }, (v) => v.toFixed(3));
+		bindSlider("s-sat", "v-sat", (v) => { config.saturation = v; }, (v) => v.toFixed(2));
+
+		readScroll();
+		tick();
+	})();
 	</script>
 </body>
 </html>

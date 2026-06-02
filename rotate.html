@@ -34,6 +34,20 @@
 			touch-action: pan-y;
 		}
 
+		/* Vignette — darkens the frame edges so attention reads to center.
+		   Above the canvas, below the overlay copy/UI; never intercepts input. */
+		.vignette {
+			position: fixed;
+			inset: 0;
+			z-index: 1;
+			pointer-events: none;
+			background: radial-gradient(
+				ellipse 75% 75% at 50% 50%,
+				transparent 40%,
+				rgb(0 0 0 / 0.55) 100%
+			);
+		}
+
 		/* Pinned overlay copy, bikebear-style. */
 		.overlay {
 			position: fixed;
@@ -173,6 +187,8 @@
 			border-radius: 10px;
 			background: rgb(8 5 2 / 0.86);
 			backdrop-filter: blur(8px);
+			max-height: calc(100vh - 80px);
+			overflow-y: auto;
 		}
 
 		.panel.collapsed .panel-body { display: none; }
@@ -188,6 +204,38 @@
 		}
 
 		.ctrl label .val { color: var(--accent); font-variant-numeric: tabular-nums; }
+
+		.ctrl input[type="file"] { width: 100%; font: 11px/1.3 inherit; color: rgb(245 234 211 / 0.7); cursor: pointer; }
+		.ctrl input[type="file"]::file-selector-button {
+			margin-right: 8px;
+			padding: 6px 10px;
+			border: 1px solid rgb(246 179 44 / 0.4);
+			border-radius: 7px;
+			background: rgb(246 179 44 / 0.12);
+			color: var(--accent);
+			font: 600 10px/1 inherit;
+			letter-spacing: 0.1em;
+			text-transform: uppercase;
+			cursor: pointer;
+		}
+		.ctrl input[type="file"]::file-selector-button:hover { background: rgb(246 179 44 / 0.22); }
+		.upload-ctrl { padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px solid rgb(246 179 44 / 0.18); }
+		.upload-ctrl .hint { color: rgb(245 234 211 / 0.4); font-size: 10px; margin-top: 6px; }
+
+		.copy-btn {
+			width: 100%;
+			margin: 2px 0 8px;
+			padding: 9px 12px;
+			border: 1px solid rgb(246 179 44 / 0.5);
+			border-radius: 9px;
+			background: rgb(246 179 44 / 0.14);
+			color: var(--accent);
+			font: 600 11px/1 inherit;
+			letter-spacing: 0.16em;
+			text-transform: uppercase;
+			cursor: pointer;
+		}
+		.copy-btn:hover { background: rgb(246 179 44 / 0.24); }
 
 		.ctrl input[type="range"] {
 			-webkit-appearance: none;
@@ -222,61 +270,110 @@
 </head>
 <body>
 	<canvas id="webgl"></canvas>
-
-	<div class="overlay">
-		<div class="hero" id="hero">
-			<span class="word">BIGGER</span>
-			<span class="word">BOLDER</span>
-			<span class="word">FASTER</span>
-		</div>
-		<p class="caption" id="caption">
-			Scroll to spin the scene. Particles orbit the core while it rotates,
-			driven entirely by your scroll position.
-		</p>
-	</div>
+	<div class="vignette" id="vignette"></div>
 
 	<div class="progress" id="progress"></div>
-	<div class="scroll-hint" id="hint">Scroll</div>
 	<div class="notice" id="notice"></div>
 
 	<div class="panel" id="panel">
 		<button class="panel-toggle" id="panelToggle">Controls</button>
 		<div class="panel-body">
-			<div class="ctrl">
-				<label>Particles <span class="val" id="v-count">3000</span></label>
-				<input type="range" id="s-count" min="300" max="9000" step="100" value="3000" />
+			<div class="ctrl upload-ctrl">
+				<label>Ground model</label>
+				<input type="file" id="upload" accept=".glb,.gltf" />
+				<div class="hint">Pick or drop a .glb/.gltf to replace the ground (bottom). The glass logo stays.</div>
 			</div>
 			<div class="ctrl">
-				<label>Glow speed <span class="val" id="v-glow">0.50×</span></label>
-				<input type="range" id="s-glow" min="0" max="4" step="0.05" value="0.5" />
+				<label>Particles <span class="val" id="v-count">1500</span></label>
+				<input type="range" id="s-count" min="300" max="9000" step="100" value="1500" />
 			</div>
 			<div class="ctrl">
-				<label>Flake size <span class="val" id="v-size">25</span></label>
-				<input type="range" id="s-size" min="8" max="90" step="1" value="25" />
+				<label>Glow speed <span class="val" id="v-glow">0.30×</span></label>
+				<input type="range" id="s-glow" min="0" max="4" step="0.05" value="0.3" />
 			</div>
 			<div class="ctrl">
-				<label>Model size <span class="val" id="v-scale">4.0</span></label>
-				<input type="range" id="s-scale" min="1.5" max="9" step="0.1" value="4.0" />
+				<label>Flake size <span class="val" id="v-size">20</span></label>
+				<input type="range" id="s-size" min="8" max="90" step="1" value="20" />
 			</div>
 			<div class="ctrl">
-				<label>Rotation / scroll <span class="val" id="v-rot">-5.0</span></label>
-				<input type="range" id="s-rot" min="-12" max="12" step="0.5" value="-5" />
+				<label>Model size <span class="val" id="v-scale">1.5</span></label>
+				<input type="range" id="s-scale" min="0" max="9" step="0.1" value="1.5" />
 			</div>
+			<div class="ctrl">
+				<label>Camera dist <span class="val" id="v-cam">6.0</span></label>
+				<input type="range" id="s-cam" min="3" max="12" step="0.1" value="6" />
+			</div>
+			<div class="ctrl">
+				<label>Depth <span class="val" id="v-depth">1.00</span></label>
+				<input type="range" id="s-depth" min="0.1" max="1" step="0.05" value="1" />
+			</div>
+			<div class="ctrl">
+				<label>Rotation / scroll <span class="val" id="v-rot">-2.0</span></label>
+				<input type="range" id="s-rot" min="-12" max="12" step="0.5" value="-2" />
+			</div>
+			<div class="ctrl">
+				<label>Ground X <span class="val" id="v-gx">1.0</span></label>
+				<input type="range" id="s-gx" min="-15" max="15" step="0.1" value="1" />
+			</div>
+			<div class="ctrl">
+				<label>Ground Y <span class="val" id="v-gy">0.2</span></label>
+				<input type="range" id="s-gy" min="-15" max="15" step="0.1" value="0.2" />
+			</div>
+			<div class="ctrl">
+				<label>Ground Z <span class="val" id="v-gz">-9.0</span></label>
+				<input type="range" id="s-gz" min="-15" max="15" step="0.1" value="-9" />
+			</div>
+			<div class="ctrl">
+				<label>Ground size <span class="val" id="v-gscale">1.00</span></label>
+				<input type="range" id="s-gscale" min="0.2" max="3" step="0.05" value="1.0" />
+			</div>
+			<div class="ctrl">
+				<label>Ground spin <span class="val" id="v-gturns">-2.0</span></label>
+				<input type="range" id="s-gturns" min="-12" max="12" step="0.5" value="-2" />
+			</div>
+			<div class="ctrl">
+				<label>Sky spin <span class="val" id="v-sky">-2.5</span></label>
+				<input type="range" id="s-sky" min="-4" max="4" step="0.1" value="-2.5" />
+			</div>
+			<div class="ctrl">
+				<label>Sky drift <span class="val" id="v-skydrift">0.02</span></label>
+				<input type="range" id="s-skydrift" min="0" max="0.3" step="0.01" value="0.02" />
+			</div>
+			<div class="ctrl">
+				<label>Haze <span class="val" id="v-haze">0.05</span></label>
+				<input type="range" id="s-haze" min="0" max="1" step="0.05" value="0.05" />
+			</div>
+			<div class="ctrl">
+				<label>Vignette <span class="val" id="v-vig">0.55</span></label>
+				<input type="range" id="s-vig" min="0" max="1" step="0.05" value="0.55" />
+			</div>
+			<button class="copy-btn" id="copyBtn">Copy settings</button>
 		</div>
 	</div>
 
 	<div class="scroll-track"></div>
 
-	<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
-	<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
-	<script>
+	<!--
+		Three.js r169 (ES modules). r163+ is required for MeshPhysicalMaterial
+		`dispersion` (the rainbow chromatic fringing on the glass bevels).
+	-->
+	<script type="importmap">
+	{
+		"imports": {
+			"three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+			"three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+		}
+	}
+	</script>
+	<script type="module">
+	import * as THREE from "three";
+	import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+	import { MeshTransmissionMaterial, DiscardMaterial } from "./MeshTransmissionMaterial.js";
+
 	(() => {
 		const canvas = document.getElementById("webgl");
 		const noticeEl = document.getElementById("notice");
 		const progressEl = document.getElementById("progress");
-		const hintEl = document.getElementById("hint");
-		const heroWords = Array.from(document.querySelectorAll("#hero .word"));
-		const captionEl = document.getElementById("caption");
 
 		// --- scroll state -------------------------------------------------
 		let scrollProgress = 0;     // 0..1 raw from scrollbar
@@ -285,11 +382,22 @@
 
 		// --- live-tunable config (driven by the control panel) ------------
 		const config = {
-			particleCount: 3000,
-			particleSize: 25,       // base point size in px
-			glowSpeed: 0.5,         // flake flutter + glint speed multiplier
-			modelScale: 4.0,        // target size of the model
-			rotationTurns: -5       // turns over a full scroll (negative reverses)
+			particleCount: 1500,
+			particleSize: 20,       // base point size in px
+			glowSpeed: 0.3,         // flake flutter + glint speed multiplier
+			modelScale: 1.5,        // target size of the model
+			depthScale: 1,          // Z-depth multiplier: 1.0 = true scene.glb depth, <1 = slimmer slabs (art override)
+			rotationTurns: -2,      // turns over a full scroll (negative reverses)
+			groundX: 1,             // ground position offset (x)
+			groundY: 0.2,           // ground position offset (y)
+			groundZ: -9,            // ground position offset (z)
+			groundScale: 1,         // ground size multiplier (on top of auto-fit)
+			groundTurns: -2,        // ground turns over a full scroll
+			skyTurns: -2.5,         // sky/environment turns over a full scroll (the glow sweeps through view)
+			skyDrift: 0.02,         // constant sky drift (radians/sec) — keeps moving even when not scrolling
+			haze: 0.05,             // warm low haze opacity (0 = off)
+			vignette: 0.55,         // edge-darkening strength (0 = off, 1 = black corners)
+			cameraDist: 6           // camera distance — lower = bigger scene in frame
 		};
 		let flakeTime = 0;          // accumulated time scaled by glowSpeed
 
@@ -302,66 +410,83 @@
 		const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
 		renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 		renderer.setSize(window.innerWidth, window.innerHeight);
-		renderer.outputEncoding = THREE.sRGBEncoding;
+		renderer.outputColorSpace = THREE.SRGBColorSpace;
 		renderer.toneMapping = THREE.ACESFilmicToneMapping;
-		renderer.toneMappingExposure = 1.1;
-		renderer.setClearColor(0x020108, 1);
+		renderer.toneMappingExposure = 1.05;
 
 		const scene = new THREE.Scene();
-		scene.fog = new THREE.FogExp2(0x020108, 0.028);
 
-		const camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 100);
-		camera.position.set(0, 0, 9);
+		const camera = new THREE.PerspectiveCamera(35, window.innerWidth / window.innerHeight, 0.1, 100);
+		camera.position.set(0, 0.3, config.cameraDist);   // slight downward tilt (like glass-reference) so the warm env gradient fills the frame
 		camera.lookAt(0, 0, 0);
 
-		// Procedural environment — bright warm tones so the metallic surface
-		// reflects gold light instead of mirroring a dark room.
-		function buildEnvironment() {
-			const c = document.createElement("canvas");
-			c.width = 64; c.height = 256;
-			const ctx = c.getContext("2d");
-			const g = ctx.createLinearGradient(0, 0, 0, 256);
-			g.addColorStop(0.0, "#fff3d6");   // bright sky
-			g.addColorStop(0.35, "#ffcf7a");
-			g.addColorStop(0.55, "#ffb43c");  // warm gold horizon
-			g.addColorStop(0.7, "#8a4f16");
-			g.addColorStop(1.0, "#1a0e04");   // dark floor
-			ctx.fillStyle = g;
-			ctx.fillRect(0, 0, 64, 256);
-			const tex = new THREE.CanvasTexture(c);
+		// --- procedural high-contrast environment: dark + one warm glow ----
+		// A high-contrast env (mostly dark with a single concentrated warm
+		// glow) is what makes transmission glass read as crystal — dark
+		// surroundings, razor-bright bevel highlights, and a warm refracted
+		// core. Used both for reflections (PMREM) and as the refracted
+		// background (equirect). Lifted from glass-reference.html.
+		function makeEnvTexture() {
+			const cv = document.createElement("canvas"); cv.width = 1024; cv.height = 512;
+			const x = cv.getContext("2d");
+			const g = x.createLinearGradient(0, 0, 0, 512);
+			g.addColorStop(0.00, "#000000"); g.addColorStop(0.55, "#1a0c03");
+			g.addColorStop(0.78, "#4d1f02"); g.addColorStop(1.00, "#0a0502");
+			x.fillStyle = g; x.fillRect(0, 0, 1024, 512);
+			const r = x.createRadialGradient(512, 330, 0, 512, 330, 240);
+			r.addColorStop(0.00, "#fff4e0"); r.addColorStop(0.25, "#ffb24d");
+			r.addColorStop(0.60, "#7a3a05"); r.addColorStop(1.00, "rgba(0,0,0,0)");
+			x.fillStyle = r; x.fillRect(0, 0, 1024, 512);
+			const tex = new THREE.CanvasTexture(cv);
 			tex.mapping = THREE.EquirectangularReflectionMapping;
-			const pmrem = new THREE.PMREMGenerator(renderer);
-			const env = pmrem.fromEquirectangular(tex).texture;
-			pmrem.dispose();
-			tex.dispose();
-			return env;
+			tex.colorSpace = THREE.SRGBColorSpace;
+			return tex;
 		}
-		scene.environment = buildEnvironment();
+		const equirect = makeEnvTexture();
+		const pmrem = new THREE.PMREMGenerator(renderer);
+		scene.environment = pmrem.fromEquirectangular(equirect).texture;
+		scene.background = equirect;
+		pmrem.dispose();
 
-		// --- lighting (warm key + cool rim for a glossy reference look) ---
-		const key = new THREE.DirectionalLight(0xffe8c4, 3.2);
-		key.position.set(4, 6, 5);
-		scene.add(key);
+		// To use a real .hdr instead, import { RGBELoader } and load it here,
+		// then assign hdr to scene.environment (via PMREM) and scene.background.
 
-		const rim = new THREE.DirectionalLight(0xff8a1f, 6.0);
-		rim.position.set(-6, 2, -4);
-		scene.add(rim);
+		// --- warm low haze ------------------------------------------------
+		// A soft warm gradient band sitting low behind the logo → hazy
+		// atmosphere over the ground/horizon (the glass refracts it too).
+		// Additive so it glows over the dark surroundings; tuned by the Haze slider.
+		function makeHazeTexture() {
+			const s = 256;
+			const c = document.createElement("canvas"); c.width = s; c.height = s;
+			const x = c.getContext("2d");
+			// Soft warm plume concentrated at the horizon, fading out in every
+			// direction → billowy mist like the reference (not a flat band).
+			const g = x.createRadialGradient(s*0.5, s*0.58, 0, s*0.5, s*0.58, s*0.5);
+			g.addColorStop(0.00, "rgba(255,170,90,0.95)");
+			g.addColorStop(0.30, "rgba(255,135,55,0.55)");
+			g.addColorStop(0.65, "rgba(190,85,30,0.18)");
+			g.addColorStop(1.00, "rgba(120,50,15,0)");
+			x.fillStyle = g; x.fillRect(0, 0, s, s);
+			const t = new THREE.CanvasTexture(c);
+			t.colorSpace = THREE.SRGBColorSpace;
+			return t;
+		}
+		const hazeMat = new THREE.MeshBasicMaterial({
+			map: makeHazeTexture(),
+			transparent: true,
+			depthWrite: false,
+			blending: THREE.AdditiveBlending,
+			opacity: config.haze
+		});
+		const haze = new THREE.Mesh(new THREE.PlaneGeometry(34, 20), hazeMat);
+		haze.position.set(0, -1.3, -3);   // glow sits at the horizon, behind the floating logo
+		scene.add(haze);
 
-		const rim2 = new THREE.DirectionalLight(0xffc85a, 4.0);
-		rim2.position.set(6, 3, -5);
-		scene.add(rim2);
-
-		const fill = new THREE.DirectionalLight(0x9ab8ff, 1.6);
-		fill.position.set(-3, -2, 4);
-		scene.add(fill);
-
-		scene.add(new THREE.AmbientLight(0x6b4a26, 1.8));
-
-		// Two warm point lights orbiting the core — sweep glints across the
-		// metal so it reads as a polished gold object as it rotates.
-		const orbLightA = new THREE.PointLight(0xffd27a, 60, 30, 2);
-		const orbLightB = new THREE.PointLight(0xff9a3c, 45, 30, 2);
-		scene.add(orbLightA, orbLightB);
+		// --- lighting -----------------------------------------------------
+		// Like glass-reference.html: NO discrete lights. The glass is lit
+		// entirely by scene.environment (the dark + single-warm-glow PMREM env),
+		// which gives the clean crystal look — dark surroundings, one hot glow,
+		// razor reflections. Add lights here only if you want to break from it.
 
 		// --- the rotating core group ------------------------------------
 		const core = new THREE.Group();
@@ -382,7 +507,7 @@
 				positions[i * 3 + 1] = (r * Math.cos(phi)) * 0.8;
 				positions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
 				seeds[i] = Math.random();
-				flake[i] = Math.random() < 0.4 ? 1.0 : 0.0;   // ~40% are bright glinting flakes
+				flake[i] = Math.random() < 0.18 ? 1.0 : 0.0;  // ~18% bright glints; rest soft warm dust
 			}
 			const geo = new THREE.BufferGeometry();
 			geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
@@ -396,8 +521,8 @@
 				uniforms: {
 					u_time: { value: 0 },
 					u_size: { value: config.particleSize * renderer.getPixelRatio() },
-					u_colorA: { value: new THREE.Color(0xb8761e) },  // deep gold
-					u_colorB: { value: new THREE.Color(0xfff0c0) }   // bright gold-white
+					u_colorA: { value: new THREE.Color(0x6a4420) },  // deep warm amber dust
+					u_colorB: { value: new THREE.Color(0xffd49a) }   // warm glow (not white)
 				},
 				vertexShader: `
 					uniform float u_time;
@@ -478,69 +603,251 @@
 		}
 
 		function applyModelScale() {
-			core.scale.setScalar(config.modelScale / coreMaxDim);
+			// Uniform fit, then an intentional Z-flatten so the slim slabs read
+			// like the reference (depthScale = 1.0 keeps the true scene.glb depth).
+			const s = config.modelScale / coreMaxDim;
+			core.scale.set(s, s, s * config.depthScale);
 		}
 
-		function addFallback() {
-			const geo = new THREE.TorusKnotGeometry(1, 0.34, 180, 32);
-			const mat = new THREE.MeshStandardMaterial({
-				color: 0x0a0603, metalness: 0.9, roughness: 0.2,
-				emissive: 0x140a02, emissiveIntensity: 0.4
+		// --- glass-through-glass: split fused mesh + multi-pass transmission --
+		// scene.glb is ONE fused mesh of both slabs. MeshTransmissionMaterial's
+		// multi-pass refraction hides "the glass mesh" to capture what's behind
+		// it — but if both slabs are one mesh, hiding it hides both and they
+		// can't refract each other. So we split the geometry into connected
+		// components (one Mesh per slab), each with its own material + render
+		// target, and capture each slab's backdrop separately in the render loop.
+
+		// Split a fused geometry into connected components (separate slabs).
+		// Lifted from glass-reference.html: weld coincident verts by quantized
+		// position, union-find over shared triangles, one BufferGeometry per group.
+		function splitConnected(geometry) {
+			const pos = geometry.attributes.position;
+			const nrm = geometry.attributes.normal || null;
+			const idx = geometry.index ? geometry.index.array : null;
+			const triCount = idx ? idx.length / 3 : pos.count / 3;
+			const tri = (t) => idx ? [idx[t*3], idx[t*3+1], idx[t*3+2]] : [t*3, t*3+1, t*3+2];
+
+			const q = 1e-4, map = new Map(), weld = new Int32Array(pos.count);
+			let next = 0;
+			for (let i = 0; i < pos.count; i++) {
+				const k = Math.round(pos.getX(i)/q)+'_'+Math.round(pos.getY(i)/q)+'_'+Math.round(pos.getZ(i)/q);
+				let r = map.get(k); if (r === undefined) { r = next++; map.set(k, r); }
+				weld[i] = r;
+			}
+			const parent = new Int32Array(next); for (let i=0;i<next;i++) parent[i]=i;
+			const find = a => { while (parent[a]!==a){ parent[a]=parent[parent[a]]; a=parent[a]; } return a; };
+			const uni  = (a,b)=>{ a=find(a); b=find(b); if(a!==b) parent[a]=b; };
+			for (let t=0;t<triCount;t++){ const [a,b,c]=tri(t); uni(weld[a],weld[b]); uni(weld[b],weld[c]); }
+			const groups = new Map();
+			for (let t=0;t<triCount;t++){ const root=find(weld[tri(t)[0]]); (groups.get(root)||groups.set(root,[]).get(root)).push(t); }
+			const geos = [];
+			for (const tris of groups.values()) {
+				const p = new Float32Array(tris.length*9);
+				const nn = nrm ? new Float32Array(tris.length*9) : null;
+				let o = 0;
+				for (const t of tris) { const v = tri(t);
+					for (let k=0;k<3;k++){ const vi=v[k];
+						p[o]=pos.getX(vi); p[o+1]=pos.getY(vi); p[o+2]=pos.getZ(vi);
+						if (nn){ nn[o]=nrm.getX(vi); nn[o+1]=nrm.getY(vi); nn[o+2]=nrm.getZ(vi); }
+						o+=3;
+					}
+				}
+				const g = new THREE.BufferGeometry();
+				g.setAttribute('position', new THREE.BufferAttribute(p,3));
+				if (nn) g.setAttribute('normal', new THREE.BufferAttribute(nn,3)); else g.computeVertexNormals();
+				geos.push(g);
+			}
+			return geos;
+		}
+
+		function makeGlass() {
+			const m = new MeshTransmissionMaterial(10, false);
+			m.transmission = 1; m._transmission = 1;
+			m.thickness = 0.25; m.ior = 1.5; m.roughness = 0.0;   // optical depth only (NOT geometry); lower = slimmer-looking glass
+			m.chromaticAberration = 0.04; m.anisotropicBlur = 0.1;
+			m.clearcoat = 1; m.clearcoatRoughness = 0;
+			m.attenuationColor = new THREE.Color(0xffd9a8); m.attenuationDistance = 4;
+			m.envMapIntensity = 1.6;
+			m.color = new THREE.Color(0xffffff);
+			return m;
+		}
+
+		// Each slab gets its own mesh + material + refraction buffer (fbo).
+		const glassMeshes = [];          // each: { mesh, mat, fbo }
+		const discard = new DiscardMaterial();
+
+		function addSlab(geo) {
+			const mat = makeGlass();
+			const mesh = new THREE.Mesh(geo, mat);
+			const fbo = new THREE.WebGLRenderTarget(window.innerWidth, window.innerHeight, { type: THREE.HalfFloatType });
+			mat.buffer = fbo.texture;
+			core.add(mesh);
+			glassMeshes.push({ mesh, mat, fbo });
+		}
+
+		// Dispose + remove all current slabs (used before loading a new model).
+		function clearSlabs() {
+			for (const g of glassMeshes) {
+				core.remove(g.mesh);
+				g.mesh.geometry.dispose();
+				g.mat.dispose();
+				g.fbo.dispose();
+			}
+			glassMeshes.length = 0;
+		}
+
+		// Turn ANY loaded glTF scene into glass slabs: bake each mesh's world
+		// transform into its geometry, split into connected components, and add
+		// each as its own glass slab. Works for the fused logo and for arbitrary
+		// uploaded models (which may have several meshes).
+		function buildGlassFrom(gltfScene) {
+			clearSlabs();
+			gltfScene.updateMatrixWorld(true);
+			const geos = [];
+			gltfScene.traverse((o) => {
+				if (!o.isMesh || !o.geometry) return;
+				const g = o.geometry.clone();
+				if (!g.attributes.normal) g.computeVertexNormals();
+				g.applyMatrix4(o.matrixWorld);   // keep multi-mesh layout
+				splitConnected(g).forEach((part) => geos.push(part));
+				g.dispose();
 			});
-			core.add(new THREE.Mesh(geo, mat));
+			if (!geos.length) { addFallback(); return; }
+			geos.forEach(addSlab);
 			frameCore();
 			modelReady = true;
 		}
 
-		if (!THREE.GLTFLoader) {
-			addFallback();
-		} else {
-			new THREE.GLTFLoader().load(
-				"scene.glb",
-				(gltf) => {
-					const model = gltf.scene || gltf.scenes?.[0];
-					if (!model) { addFallback(); return; }
-					model.traverse((child) => {
-						if (!child.isMesh) return;
-						// Womp/GLB exports can ship without normals → all lighting
-						// resolves to black. Recompute them so the surface lights up.
-						if (child.geometry && !child.geometry.attributes.normal) {
-							child.geometry.computeVertexNormals();
-						}
-						child.material = new THREE.MeshPhysicalMaterial({
-							color: 0xc8862c,          // warm gold base
-							metalness: 0.9,
-							roughness: 0.34,
-							clearcoat: 1.0,
-							clearcoatRoughness: 0.18,
-							reflectivity: 0.9,
-							emissive: 0x6e3a0e,        // warm self-glow so it never goes black
-							emissiveIntensity: 0.45,
-							envMapIntensity: 2.6
-						});
-					});
-					core.add(model);
-					frameCore();
-					modelReady = true;
-				},
-				undefined,
-				() => {
-					noticeEl.classList.add("show");
-					noticeEl.innerHTML = "Couldn't load <code>scene.glb</code>. " +
-						"Open this page from a local server (e.g. <code>python3 -m http.server</code>) " +
-						"so the model can load. Showing a placeholder for now.";
-					addFallback();
-				}
+		function addFallback() {
+			clearSlabs();
+			addSlab(new THREE.TorusKnotGeometry(1, 0.34, 180, 32));
+			frameCore();
+			modelReady = true;
+		}
+
+		new GLTFLoader().load(
+			"scene.glb",
+			(gltf) => buildGlassFrom(gltf.scene),
+			undefined,
+			() => {
+				noticeEl.classList.add("show");
+				noticeEl.innerHTML = "Couldn't load <code>scene.glb</code>. " +
+					"Open this page from a local server (e.g. <code>python3 -m http.server</code>) " +
+					"so the model can load. Showing a placeholder for now.";
+				addFallback();
+			}
+		);
+
+		// --- ground under the logo ---------------------------------------
+		// model.glb is a rocky terrain (RealityCapture scan). It lives in the
+		// scene inside its own pivot so it can spin in place (driven by scroll
+		// like the logo), is lit by the env, and is refracted by the glass
+		// above it. Auto-fit: scale so its largest horizontal span ≈ GROUND_SPAN,
+		// center it in the pivot, then the pivot is placed/scaled/spun by the
+		// control-panel sliders via applyGround().
+		const GROUND_SPAN = 22;     // base world units across (x/z) before the size slider
+		const GROUND_TOP_Y = -2.2;  // base height of the ground's top, just below the logo
+		const groundPivot = new THREE.Group();
+		scene.add(groundPivot);
+		let groundReady = false;
+		let groundHalfH = 0;        // half-height after auto-fit (for top alignment)
+
+		function applyGround() {
+			if (!groundReady) return;
+			groundPivot.scale.setScalar(config.groundScale);
+			groundPivot.position.set(
+				config.groundX,
+				GROUND_TOP_Y - groundHalfH * config.groundScale + config.groundY,
+				config.groundZ
 			);
 		}
 
-		// --- overlay copy reacts to scroll sections -----------------------
+		let groundObj = null;
+
+		// Remove + dispose the current ground before loading a replacement.
+		function clearGround() {
+			if (!groundObj) return;
+			groundPivot.remove(groundObj);
+			groundObj.traverse((o) => {
+				if (!o.isMesh) return;
+				o.geometry?.dispose();
+				if (o.material) { o.material.map?.dispose?.(); o.material.dispose(); }
+			});
+			groundObj = null;
+			groundReady = false;
+		}
+
+		// Load a ground model from a URL (the default model.glb or an upload):
+		// auto-fit, center on the pivot, and give untextured scans a dark rock
+		// look. Replaces whatever ground is currently shown.
+		function loadGround(url, onError) {
+			new GLTFLoader().load(
+				url,
+				(gltf) => {
+					clearGround();
+					const ground = gltf.scene;
+					let box = new THREE.Box3().setFromObject(ground);
+					const size = box.getSize(new THREE.Vector3());
+					const span = Math.max(size.x, size.z) || 1;
+					const fit = GROUND_SPAN / span;
+					ground.scale.setScalar(fit);
+
+					// center the geometry on the pivot origin so it spins in place
+					box = new THREE.Box3().setFromObject(ground);
+					ground.position.sub(box.getCenter(new THREE.Vector3()));
+					groundHalfH = size.y * fit / 2;
+
+					// Textured meshes → crisp/HD: max anisotropy (sharp at grazing
+					// angles), correct color space, trilinear mipmaps. Untextured
+					// meshes (e.g. model.glb's missing diffuse) get a dark rough
+					// rock look so they aren't flat white.
+					const maxAniso = renderer.capabilities.getMaxAnisotropy();
+					ground.traverse((o) => {
+						if (!o.isMesh || !o.material) return;
+						const m = o.material;
+						// a real texture (not the 1×1 dummy from a missing file)
+						const realTex = m.map && m.map.image && m.map.image.width > 2;
+						if (realTex) {
+							m.map.anisotropy = maxAniso;
+							m.map.colorSpace = THREE.SRGBColorSpace;
+							m.map.generateMipmaps = true;
+							m.map.minFilter = THREE.LinearMipmapLinearFilter;
+							m.map.needsUpdate = true;
+						} else {
+							m.map = null;
+							m.color = new THREE.Color(0x4a3a2c);
+							m.roughness = 1.0;
+							m.metalness = 0.0;
+							m.envMapIntensity = 0.6;
+						}
+					});
+
+					groundPivot.add(ground);
+					groundObj = ground;
+					groundReady = true;
+					applyGround();
+					URL.revokeObjectURL(url);   // no-op for non-blob URLs
+				},
+				undefined,
+				(e) => { URL.revokeObjectURL(url); if (onError) onError(e); }
+			);
+		}
+
+		loadGround("model.glb", () => console.warn("[ground] couldn't load model.glb (serve over http)."));
+
+		// Replace the GROUND (bottom) model live from a user-picked file.
+		function loadGroundFile(file) {
+			if (!file) return;
+			loadGround(URL.createObjectURL(file), () => {
+				noticeEl.classList.add("show");
+				noticeEl.innerHTML = "Couldn't read that file — make sure it's a valid <code>.glb</code> or <code>.gltf</code>.";
+				setTimeout(() => noticeEl.classList.remove("show"), 4000);
+			});
+		}
+
+		// --- scroll progress bar -----------------------------------------
 		function updateOverlay(p) {
 			progressEl.style.transform = `scaleX(${p})`;
-			hintEl.style.opacity = p > 0.04 ? "0" : "1";
-			captionEl.classList.toggle("is-active", p > 0.02 && p < 0.9);
-			const active = Math.min(heroWords.length - 1, Math.floor(p * heroWords.length));
-			heroWords.forEach((w, i) => w.classList.toggle("is-active", i === active));
 		}
 
 		// --- render loop --------------------------------------------------
@@ -561,24 +868,51 @@
 				// scroll scrubs rotationTurns full turns; pointer adds parallax tilt
 				core.rotation.y = easedProgress * Math.PI * config.rotationTurns + pointer.x * 0.4;
 				core.rotation.x = Math.sin(easedProgress * Math.PI * 2) * 0.25 - pointer.y * 0.25;
-				core.position.y = Math.sin(t * 0.6) * 0.12;
 			}
 
-			// orbit the warm point lights so glints sweep across the gold
-			orbLightA.position.set(Math.cos(t * 0.6) * 5, Math.sin(t * 0.4) * 3 + 1, Math.sin(t * 0.6) * 5);
-			orbLightB.position.set(Math.cos(t * 0.5 + 2.1) * 4.5, Math.cos(t * 0.3) * 3, Math.sin(t * 0.5 + 2.1) * 4.5);
+			// ground spins in place, driven by scroll (like the logo)
+			if (groundReady) {
+				groundPivot.rotation.y = easedProgress * Math.PI * config.groundTurns;
+			}
+
+			// rotate the sky + environment so the warm glow sweeps through view
+			// (the lively feel from orbiting in glass-reference):
+			//  - scroll spin (skyTurns) at its OWN rate, distinct from the logo
+			//  - constant drift (skyDrift) so it moves even when idle
+			//  - a touch of OPPOSITE pointer influence vs the logo → parallax depth
+			// environmentRotation tracks it so reflections stay in sync.
+			scene.backgroundRotation.y =
+				easedProgress * Math.PI * config.skyTurns + t * config.skyDrift - pointer.x * 0.15;
+			scene.environmentRotation.y = scene.backgroundRotation.y;
 
 			// particles slowly counter-rotate and react to scroll
 			particles.points.rotation.y = -easedProgress * Math.PI * 1.5 - t * 0.02;
 			particles.mat.uniforms.u_time.value = flakeTime;
 
 			// gentle camera dolly through the scroll
-			camera.position.z = 9 - easedProgress * 2.2;
+			camera.position.z = config.cameraDist - easedProgress * 2.2;
 			camera.position.x = pointer.x * 0.6;
-			camera.position.y = pointer.y * 0.4;
+			camera.position.y = 0.3 + pointer.y * 0.4;   // keep the downward tilt so the warm gradient fills the frame
 			camera.lookAt(0, 0, 0);
 
 			updateOverlay(easedProgress);
+
+			// Multi-pass transmission: for each slab, hide ONLY that slab (swap
+			// to DiscardMaterial) and render the rest of the scene — including the
+			// other slabs — into its buffer, so the front slab refracts the back
+			// one. Then restore and do the final render. NoToneMapping for the
+			// buffer passes (the captured texture must stay linear).
+			const oldTone = renderer.toneMapping;
+			for (const g of glassMeshes) {
+				g.mat.time = t;
+				g.mesh.material = discard;
+				renderer.toneMapping = THREE.NoToneMapping;
+				renderer.setRenderTarget(g.fbo);
+				renderer.render(scene, camera);
+				renderer.setRenderTarget(null);
+				renderer.toneMapping = oldTone;
+				g.mesh.material = g.mat;   // restore; it samples g.fbo
+			}
 
 			renderer.render(scene, camera);
 			requestAnimationFrame(tick);
@@ -590,6 +924,7 @@
 			camera.aspect = window.innerWidth / window.innerHeight;
 			camera.updateProjectionMatrix();
 			renderer.setSize(window.innerWidth, window.innerHeight);
+			glassMeshes.forEach((g) => g.fbo.setSize(window.innerWidth, window.innerHeight));
 			particles.mat.uniforms.u_size.value = config.particleSize * renderer.getPixelRatio();
 			readScroll();
 		});
@@ -598,10 +933,36 @@
 			pointer.ty = -((e.clientY / window.innerHeight) * 2 - 1);
 		}, { passive: true });
 
+		// --- upload: file picker + drag-and-drop to swap the GROUND live ---
+		document.getElementById("upload").addEventListener("change", (e) => {
+			loadGroundFile(e.target.files[0]);
+		});
+		window.addEventListener("dragover", (e) => e.preventDefault());
+		window.addEventListener("drop", (e) => {
+			e.preventDefault();
+			loadGroundFile(e.dataTransfer.files[0]);
+		});
+
 		// --- control panel wiring ----------------------------------------
 		const panel = document.getElementById("panel");
 		document.getElementById("panelToggle").addEventListener("click", () => {
 			panel.classList.toggle("collapsed");
+		});
+
+		// Copy the current control values (config) to the clipboard as a JS
+		// object literal, so a tuned look can be saved / pasted back in.
+		const copyBtn = document.getElementById("copyBtn");
+		copyBtn.addEventListener("click", () => {
+			const text = "{\n" +
+				Object.entries(config).map(([k, v]) => `\t${k}: ${v},`).join("\n") +
+				"\n}";
+			navigator.clipboard.writeText(text).then(() => {
+				copyBtn.textContent = "Copied!";
+				setTimeout(() => (copyBtn.textContent = "Copy settings"), 1200);
+			}).catch(() => {
+				copyBtn.textContent = "Copy failed";
+				setTimeout(() => (copyBtn.textContent = "Copy settings"), 1200);
+			});
 		});
 
 		function bindSlider(id, valId, onChange, fmt) {
@@ -633,9 +994,32 @@
 			applyModelScale();
 		}, (v) => v.toFixed(1));
 
+		bindSlider("s-cam", "v-cam", (v) => { config.cameraDist = v; }, (v) => v.toFixed(1));
+
+		bindSlider("s-depth", "v-depth", (v) => {
+			config.depthScale = v;
+			applyModelScale();
+		}, (v) => v.toFixed(2));
+
 		bindSlider("s-rot", "v-rot", (v) => {
 			config.rotationTurns = v;
 		}, (v) => v.toFixed(1));
+
+		bindSlider("s-gx", "v-gx", (v) => { config.groundX = v; applyGround(); }, (v) => v.toFixed(1));
+		bindSlider("s-gy", "v-gy", (v) => { config.groundY = v; applyGround(); }, (v) => v.toFixed(1));
+		bindSlider("s-gz", "v-gz", (v) => { config.groundZ = v; applyGround(); }, (v) => v.toFixed(1));
+		bindSlider("s-gscale", "v-gscale", (v) => { config.groundScale = v; applyGround(); }, (v) => v.toFixed(2));
+		bindSlider("s-gturns", "v-gturns", (v) => { config.groundTurns = v; }, (v) => v.toFixed(1));
+		bindSlider("s-sky", "v-sky", (v) => { config.skyTurns = v; }, (v) => v.toFixed(1));
+		bindSlider("s-skydrift", "v-skydrift", (v) => { config.skyDrift = v; }, (v) => v.toFixed(2));
+		bindSlider("s-haze", "v-haze", (v) => { config.haze = v; hazeMat.opacity = v; }, (v) => v.toFixed(2));
+
+		const vignetteEl = document.getElementById("vignette");
+		function applyVignette() {
+			vignetteEl.style.background =
+				`radial-gradient(ellipse 75% 75% at 50% 50%, transparent 40%, rgb(0 0 0 / ${config.vignette}) 100%)`;
+		}
+		bindSlider("s-vig", "v-vig", (v) => { config.vignette = v; applyVignette(); }, (v) => v.toFixed(2));
 
 		readScroll();
 		tick();

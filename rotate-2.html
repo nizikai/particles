@@ -1,0 +1,1158 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<title>Scroll Rotate · Particle Scene</title>
+	<style>
+		* { box-sizing: border-box; margin: 0; padding: 0; }
+
+		:root {
+			--bg-top: #000000;
+			--bg-bottom: #0a0603;
+			--accent: #f6b32c;
+			--ink: #f5ead3;
+		}
+
+		html, body {
+			width: 100%;
+			background: linear-gradient(180deg, var(--bg-top) 0%, #050302 45%, var(--bg-bottom) 100%);
+			color: var(--ink);
+			font-family: "Avenir Next", "Trebuchet MS", system-ui, sans-serif;
+		}
+
+		/* Tall scroll track — this is what we scrub the rotation against. */
+		.scroll-track { height: 500vh; }
+
+		#webgl {
+			position: fixed;
+			inset: 0;
+			width: 100vw;
+			height: 100vh;
+			display: block;
+			z-index: 1;
+			touch-action: pan-y;
+		}
+
+		/* Pinned overlay copy, bikebear-style. */
+		.overlay {
+			position: fixed;
+			inset: 0;
+			z-index: 2;
+			pointer-events: none;
+		}
+
+		.hero {
+			position: absolute;
+			top: 7vh;
+			left: 0;
+			right: 0;
+			text-align: center;
+		}
+
+		.hero .word {
+			position: absolute;
+			top: 0;
+			left: 0;
+			right: 0;
+			font: 800 clamp(64px, 17vw, 280px)/0.9 "Arial Black", Impact, sans-serif;
+			letter-spacing: -0.02em;
+			text-transform: uppercase;
+			color: #ffffff;
+			opacity: 0;
+			transform: translateY(28px);
+			transition: opacity 0.5s ease, transform 0.5s ease;
+			text-shadow: 0 0 60px rgb(246 179 44 / 0.18);
+		}
+
+		.hero .word.is-active { opacity: 1; transform: translateY(0); }
+
+		.caption {
+			position: absolute;
+			right: clamp(20px, 5vw, 90px);
+			top: 42vh;
+			max-width: 22em;
+			text-align: left;
+			color: rgb(245 234 211 / 0.72);
+			font: 500 clamp(13px, 1vw, 16px)/1.55 inherit;
+			letter-spacing: 0.01em;
+			opacity: 0;
+			transition: opacity 0.6s ease;
+		}
+
+		.caption.is-active { opacity: 1; }
+
+		.scroll-hint {
+			position: fixed;
+			left: 50%;
+			bottom: 26px;
+			transform: translateX(-50%);
+			z-index: 3;
+			color: rgb(245 234 211 / 0.6);
+			font: 600 11px/1 inherit;
+			letter-spacing: 0.28em;
+			text-transform: uppercase;
+			transition: opacity 0.4s ease;
+		}
+
+		.scroll-hint::after {
+			content: "";
+			display: block;
+			width: 1px;
+			height: 26px;
+			margin: 10px auto 0;
+			background: linear-gradient(180deg, var(--accent), transparent);
+			animation: nudge 1.8s ease-in-out infinite;
+		}
+
+		@keyframes nudge {
+			0%, 100% { opacity: 0.2; transform: translateY(-6px); }
+			50% { opacity: 1; transform: translateY(2px); }
+		}
+
+		.progress {
+			position: fixed;
+			left: 0; right: 0; top: 0;
+			height: 2px;
+			z-index: 4;
+			transform-origin: 0 50%;
+			transform: scaleX(0);
+			background: linear-gradient(90deg, var(--accent), #fff);
+		}
+
+		.notice {
+			position: fixed;
+			left: 50%;
+			top: 50%;
+			transform: translate(-50%, -50%);
+			z-index: 5;
+			padding: 14px 18px;
+			max-width: min(86vw, 460px);
+			border: 1px solid rgb(246 179 44 / 0.35);
+			border-radius: 10px;
+			background: rgb(8 5 2 / 0.92);
+			color: var(--ink);
+			font: 13px/1.5 inherit;
+			text-align: center;
+			display: none;
+		}
+
+		.notice.show { display: block; }
+		.notice code { color: var(--accent); }
+
+		/* --- fps counter --- */
+		#fps {
+			position: fixed;
+			top: 12px;
+			left: 14px;
+			z-index: 6;
+			padding: 4px 8px;
+			border-radius: 6px;
+			background: rgb(8 5 2 / 0.6);
+			color: var(--accent);
+			font: 600 11px/1 ui-monospace, "SF Mono", Menlo, monospace;
+			letter-spacing: 0.08em;
+			pointer-events: none;
+		}
+
+		/* --- control panel --- */
+		.panel {
+			position: fixed;
+			top: 16px;
+			right: 16px;
+			z-index: 6;
+			width: 248px;
+			font: 11px/1.4 inherit;
+			color: var(--ink);
+			user-select: none;
+		}
+
+		.panel-toggle {
+			width: 100%;
+			padding: 9px 12px;
+			border: 1px solid rgb(246 179 44 / 0.4);
+			border-radius: 9px;
+			background: rgb(10 6 2 / 0.82);
+			color: var(--accent);
+			font: 600 11px/1 inherit;
+			letter-spacing: 0.16em;
+			text-transform: uppercase;
+			cursor: pointer;
+			backdrop-filter: blur(6px);
+		}
+
+		.panel-body {
+			margin-top: 8px;
+			padding: 14px 14px 6px;
+			border: 1px solid rgb(246 179 44 / 0.22);
+			border-radius: 10px;
+			background: rgb(8 5 2 / 0.86);
+			backdrop-filter: blur(8px);
+			max-height: calc(100vh - 80px);
+			overflow-y: auto;
+		}
+
+		.panel.collapsed .panel-body { display: none; }
+
+		.ctrl { margin-bottom: 14px; }
+
+		.ctrl label {
+			display: flex;
+			justify-content: space-between;
+			margin-bottom: 6px;
+			color: rgb(245 234 211 / 0.78);
+			letter-spacing: 0.04em;
+		}
+
+		.ctrl label .val { color: var(--accent); font-variant-numeric: tabular-nums; }
+
+		.ctrl input[type="file"] { width: 100%; font: 11px/1.3 inherit; color: rgb(245 234 211 / 0.7); cursor: pointer; }
+		.ctrl input[type="file"]::file-selector-button {
+			margin-right: 8px;
+			padding: 6px 10px;
+			border: 1px solid rgb(246 179 44 / 0.4);
+			border-radius: 7px;
+			background: rgb(246 179 44 / 0.12);
+			color: var(--accent);
+			font: 600 10px/1 inherit;
+			letter-spacing: 0.1em;
+			text-transform: uppercase;
+			cursor: pointer;
+		}
+		.ctrl input[type="file"]::file-selector-button:hover { background: rgb(246 179 44 / 0.22); }
+		.upload-ctrl { padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px solid rgb(246 179 44 / 0.18); }
+		.upload-ctrl .hint { color: rgb(245 234 211 / 0.4); font-size: 10px; margin-top: 6px; }
+
+		.copy-btn {
+			width: 100%;
+			margin: 2px 0 8px;
+			padding: 9px 12px;
+			border: 1px solid rgb(246 179 44 / 0.5);
+			border-radius: 9px;
+			background: rgb(246 179 44 / 0.14);
+			color: var(--accent);
+			font: 600 11px/1 inherit;
+			letter-spacing: 0.16em;
+			text-transform: uppercase;
+			cursor: pointer;
+		}
+		.copy-btn:hover { background: rgb(246 179 44 / 0.24); }
+
+		.ctrl input[type="range"] {
+			-webkit-appearance: none;
+			appearance: none;
+			width: 100%;
+			height: 3px;
+			border-radius: 3px;
+			background: rgb(246 179 44 / 0.25);
+			outline: none;
+			cursor: pointer;
+		}
+
+		.ctrl input[type="range"]::-webkit-slider-thumb {
+			-webkit-appearance: none;
+			appearance: none;
+			width: 14px;
+			height: 14px;
+			border-radius: 50%;
+			background: var(--accent);
+			box-shadow: 0 0 8px rgb(246 179 44 / 0.7);
+		}
+
+		.ctrl input[type="range"]::-moz-range-thumb {
+			width: 14px;
+			height: 14px;
+			border: none;
+			border-radius: 50%;
+			background: var(--accent);
+			box-shadow: 0 0 8px rgb(246 179 44 / 0.7);
+		}
+	</style>
+</head>
+<body>
+	<canvas id="webgl"></canvas>
+
+	<div class="progress" id="progress"></div>
+	<div id="fps">— fps</div>
+	<div class="notice" id="notice"></div>
+
+	<div class="panel" id="panel">
+		<button class="panel-toggle" id="panelToggle">Controls</button>
+		<div class="panel-body">
+			<div class="ctrl upload-ctrl">
+				<label>Ground model</label>
+				<input type="file" id="upload" accept=".glb,.gltf" />
+				<div class="hint">Pick or drop a .glb/.gltf to replace the ground (bottom). The glass logo stays.</div>
+			</div>
+			<div class="ctrl">
+				<label>Particles <span class="val" id="v-count">2000</span></label>
+				<input type="range" id="s-count" min="300" max="9000" step="100" value="2000" />
+			</div>
+			<div class="ctrl">
+				<label>Glow speed <span class="val" id="v-glow">0.30×</span></label>
+				<input type="range" id="s-glow" min="0" max="4" step="0.05" value="0.3" />
+			</div>
+			<div class="ctrl">
+				<label>Flake size <span class="val" id="v-size">10</span></label>
+				<input type="range" id="s-size" min="8" max="90" step="1" value="10" />
+			</div>
+			<div class="ctrl">
+				<label>Model size <span class="val" id="v-scale">1.5</span></label>
+				<input type="range" id="s-scale" min="0" max="9" step="0.1" value="1.5" />
+			</div>
+			<div class="ctrl">
+				<label>Camera dist <span class="val" id="v-cam">10.0</span></label>
+				<input type="range" id="s-cam" min="3" max="16" step="0.1" value="10" />
+			</div>
+			<div class="ctrl">
+				<label>Depth <span class="val" id="v-depth">1.00</span></label>
+				<input type="range" id="s-depth" min="0.1" max="1" step="0.05" value="1" />
+			</div>
+			<div class="ctrl">
+				<label>Rotation / scroll <span class="val" id="v-rot">-2.0</span></label>
+				<input type="range" id="s-rot" min="-12" max="12" step="0.5" value="-2" />
+			</div>
+			<div class="ctrl">
+				<label>Ground X <span class="val" id="v-gx">1.0</span></label>
+				<input type="range" id="s-gx" min="-15" max="15" step="0.1" value="1" />
+			</div>
+			<div class="ctrl">
+				<label>Ground Y <span class="val" id="v-gy">0.2</span></label>
+				<input type="range" id="s-gy" min="-15" max="15" step="0.1" value="0.2" />
+			</div>
+			<div class="ctrl">
+				<label>Ground Z <span class="val" id="v-gz">-9.0</span></label>
+				<input type="range" id="s-gz" min="-15" max="15" step="0.1" value="-9" />
+			</div>
+			<div class="ctrl">
+				<label>Ground size <span class="val" id="v-gscale">1.00</span></label>
+				<input type="range" id="s-gscale" min="0.2" max="3" step="0.05" value="1.0" />
+			</div>
+			<div class="ctrl">
+				<label>Ground spin <span class="val" id="v-gturns">-2.0</span></label>
+				<input type="range" id="s-gturns" min="-12" max="12" step="0.5" value="-2" />
+			</div>
+			<div class="ctrl">
+				<label>Sky spin <span class="val" id="v-sky">-2.5</span></label>
+				<input type="range" id="s-sky" min="-4" max="4" step="0.1" value="-2.5" />
+			</div>
+			<div class="ctrl">
+				<label>Sky drift <span class="val" id="v-skydrift">0.02</span></label>
+				<input type="range" id="s-skydrift" min="0" max="0.3" step="0.01" value="0.02" />
+			</div>
+			<div class="ctrl">
+				<label>Haze <span class="val" id="v-haze">0.05</span></label>
+				<input type="range" id="s-haze" min="0" max="1" step="0.05" value="0.05" />
+			</div>
+			<div class="ctrl">
+				<label>Bloom <span class="val" id="v-bloom">0.70</span></label>
+				<input type="range" id="s-bloom" min="0" max="3" step="0.05" value="0.7" />
+			</div>
+			<div class="ctrl">
+				<label>Depth of field <span class="val" id="v-dof">0.40</span></label>
+				<input type="range" id="s-dof" min="0" max="2" step="0.05" value="0.4" />
+			</div>
+			<div class="ctrl">
+				<label>Grain <span class="val" id="v-grain">0.02</span></label>
+				<input type="range" id="s-grain" min="0" max="0.4" step="0.01" value="0.02" />
+			</div>
+			<button class="copy-btn" id="copyBtn">Copy settings</button>
+		</div>
+	</div>
+
+	<div class="scroll-track"></div>
+
+	<!--
+		Three.js r169 (ES modules). r163+ is required for MeshPhysicalMaterial
+		`dispersion` (the rainbow chromatic fringing on the glass bevels).
+	-->
+	<script type="importmap">
+	{
+		"imports": {
+			"three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+			"three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+		}
+	}
+	</script>
+	<script type="module">
+	import * as THREE from "three";
+	import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+	import { MeshTransmissionMaterial, DiscardMaterial } from "./MeshTransmissionMaterial.js";
+	import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+	import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+	import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+	import { BokehPass } from "three/addons/postprocessing/BokehPass.js";
+	import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
+	import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
+
+	(() => {
+		const canvas = document.getElementById("webgl");
+		const noticeEl = document.getElementById("notice");
+		const progressEl = document.getElementById("progress");
+		const fpsEl = document.getElementById("fps");
+		let fpsFrames = 0, fpsLast = 0;   // rolling FPS counter
+
+		// --- scroll state -------------------------------------------------
+		let scrollProgress = 0;     // 0..1 raw from scrollbar
+		let easedProgress = 0;      // smoothed, drives rotation
+		const pointer = { x: 0, y: 0, tx: 0, ty: 0 };
+
+		// --- live-tunable config (driven by the control panel) ------------
+		const config = {
+			particleCount: 2000,
+			particleSize: 10,       // base point size in px
+			glowSpeed: 0.3,         // flake flutter + glint speed multiplier
+			modelScale: 1.5,        // target size of the model
+			depthScale: 1,          // Z-depth multiplier: 1.0 = true scene.glb depth, <1 = slimmer slabs (art override)
+			rotationTurns: -2,      // turns over a full scroll (negative reverses)
+			groundX: 1,             // ground position offset (x)
+			groundY: 0.2,           // ground position offset (y)
+			groundZ: -9,            // ground position offset (z)
+			groundScale: 1,         // ground size multiplier (on top of auto-fit)
+			groundTurns: -2,        // ground turns over a full scroll
+			skyTurns: -2.5,         // sky/environment turns over a full scroll (the glow sweeps through view)
+			skyDrift: 0.02,         // constant sky drift (radians/sec) — keeps moving even when not scrolling
+			haze: 0.05,             // warm low haze opacity (0 = off)
+			cameraDist: 10,         // camera distance — lower = bigger scene in frame
+			bloom: 0.7,             // bloom strength (glow off bright areas)
+			dof: 0.4,               // depth-of-field amount (0 = off)
+			grain: 0.02             // film grain + dither amount (also kills banding)
+		};
+		let flakeTime = 0;          // accumulated time scaled by glowSpeed
+
+		function readScroll() {
+			const max = document.documentElement.scrollHeight - window.innerHeight;
+			scrollProgress = max > 0 ? Math.min(1, Math.max(0, window.scrollY / max)) : 0;
+		}
+
+		// --- renderer / scene --------------------------------------------
+		// Mobile auto-detect → lighter settings (desktop keeps full quality):
+		// capped pixel ratio, half-res glass buffers + fewer transmission samples,
+		// no depth-of-field, fewer particles.
+		const isMobile = matchMedia("(pointer: coarse)").matches || window.innerWidth < 768;
+		const fboScale = isMobile ? 0.5 : 1;     // glass refraction buffer resolution
+		if (isMobile) {
+			config.particleCount = 900;
+			document.getElementById("s-count").value = 900;
+			document.getElementById("v-count").textContent = "900";
+		}
+
+		const renderer = new THREE.WebGLRenderer({ canvas, antialias: !isMobile, alpha: false });
+		renderer.setPixelRatio(Math.min(window.devicePixelRatio, isMobile ? 1.5 : 2));
+		renderer.setSize(window.innerWidth, window.innerHeight);
+		renderer.outputColorSpace = THREE.SRGBColorSpace;
+		renderer.toneMapping = THREE.ACESFilmicToneMapping;
+		renderer.toneMappingExposure = 1.05;
+
+		const scene = new THREE.Scene();
+
+		const camera = new THREE.PerspectiveCamera(35, window.innerWidth / window.innerHeight, 0.1, 100);
+		camera.position.set(0, 0.3, config.cameraDist);   // slight downward tilt (like glass-reference) so the warm env gradient fills the frame
+		camera.lookAt(0, 0, 0);
+
+		// --- procedural high-contrast environment: dark + one warm glow ----
+		// A high-contrast env (mostly dark with a single concentrated warm
+		// glow) is what makes transmission glass read as crystal — dark
+		// surroundings, razor-bright bevel highlights, and a warm refracted
+		// core. Used both for reflections (PMREM) and as the refracted
+		// background (equirect). Lifted from glass-reference.html.
+		function makeEnvTexture() {
+			const cv = document.createElement("canvas"); cv.width = 1024; cv.height = 512;
+			const x = cv.getContext("2d");
+			const g = x.createLinearGradient(0, 0, 0, 512);
+			g.addColorStop(0.00, "#000000"); g.addColorStop(0.55, "#1a0c03");
+			g.addColorStop(0.78, "#4d1f02"); g.addColorStop(1.00, "#0a0502");
+			x.fillStyle = g; x.fillRect(0, 0, 1024, 512);
+			const r = x.createRadialGradient(512, 330, 0, 512, 330, 240);
+			r.addColorStop(0.00, "#fff4e0"); r.addColorStop(0.25, "#ffb24d");
+			r.addColorStop(0.60, "#7a3a05"); r.addColorStop(1.00, "rgba(0,0,0,0)");
+			x.fillStyle = r; x.fillRect(0, 0, 1024, 512);
+			const tex = new THREE.CanvasTexture(cv);
+			tex.mapping = THREE.EquirectangularReflectionMapping;
+			tex.colorSpace = THREE.SRGBColorSpace;
+			return tex;
+		}
+		const equirect = makeEnvTexture();
+		const pmrem = new THREE.PMREMGenerator(renderer);
+		scene.environment = pmrem.fromEquirectangular(equirect).texture;
+		scene.background = equirect;
+		pmrem.dispose();
+
+		// To use a real .hdr instead, import { RGBELoader } and load it here,
+		// then assign hdr to scene.environment (via PMREM) and scene.background.
+
+		// --- warm low haze ------------------------------------------------
+		// A soft warm gradient band sitting low behind the logo → hazy
+		// atmosphere over the ground/horizon (the glass refracts it too).
+		// Additive so it glows over the dark surroundings; tuned by the Haze slider.
+		function makeHazeTexture() {
+			const s = 256;
+			const c = document.createElement("canvas"); c.width = s; c.height = s;
+			const x = c.getContext("2d");
+			// Soft warm plume concentrated at the horizon, fading out in every
+			// direction → billowy mist like the reference (not a flat band).
+			const g = x.createRadialGradient(s*0.5, s*0.58, 0, s*0.5, s*0.58, s*0.5);
+			g.addColorStop(0.00, "rgba(255,170,90,0.95)");
+			g.addColorStop(0.30, "rgba(255,135,55,0.55)");
+			g.addColorStop(0.65, "rgba(190,85,30,0.18)");
+			g.addColorStop(1.00, "rgba(120,50,15,0)");
+			x.fillStyle = g; x.fillRect(0, 0, s, s);
+			const t = new THREE.CanvasTexture(c);
+			t.colorSpace = THREE.SRGBColorSpace;
+			return t;
+		}
+		const hazeMat = new THREE.MeshBasicMaterial({
+			map: makeHazeTexture(),
+			transparent: true,
+			depthWrite: false,
+			blending: THREE.AdditiveBlending,
+			opacity: config.haze
+		});
+		const haze = new THREE.Mesh(new THREE.PlaneGeometry(34, 20), hazeMat);
+		haze.position.set(0, -1.3, -3);   // glow sits at the horizon, behind the floating logo
+		scene.add(haze);
+
+		// --- drifting volumetric mist -------------------------------------
+		// A few big soft additive billboards low in the scene that slowly drift
+		// and breathe → rolling ground mist (cheap fake volumetrics).
+		const mistTex = makeHazeTexture();
+		const mistGroup = new THREE.Group();
+		const mistLayers = [];
+		for (let i = 0; i < 5; i++) {
+			const m = new THREE.Mesh(
+				new THREE.PlaneGeometry(26, 12),
+				new THREE.MeshBasicMaterial({ map: mistTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.06 })
+			);
+			m.position.set((Math.random() - 0.5) * 14, -2.4 + Math.random() * 1.2, -2 - Math.random() * 5);
+			m.userData.seed = Math.random() * 6.28;
+			m.userData.baseX = m.position.x;
+			mistGroup.add(m); mistLayers.push(m);
+		}
+		scene.add(mistGroup);
+
+		// --- lighting -----------------------------------------------------
+		// Like glass-reference.html: NO discrete lights. The glass is lit
+		// entirely by scene.environment (the dark + single-warm-glow PMREM env),
+		// which gives the clean crystal look — dark surroundings, one hot glow,
+		// razor reflections. Add lights here only if you want to break from it.
+
+		// --- the rotating core group ------------------------------------
+		const core = new THREE.Group();
+		scene.add(core);
+
+		// --- particles orbiting the core --------------------------------
+		function buildParticles() {
+			const COUNT = config.particleCount;
+			const positions = new Float32Array(COUNT * 3);
+			const seeds = new Float32Array(COUNT);
+			const flake = new Float32Array(COUNT);   // 0 = dust mote, 1 = bright flake
+			for (let i = 0; i < COUNT; i++) {
+				// distribute in a thick spherical shell around the model
+				const r = 2.6 + Math.random() * 7.0;
+				const theta = Math.random() * Math.PI * 2;
+				const phi = Math.acos(2 * Math.random() - 1);
+				positions[i * 3 + 0] = r * Math.sin(phi) * Math.cos(theta);
+				positions[i * 3 + 1] = (r * Math.cos(phi)) * 0.8;
+				positions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+				seeds[i] = Math.random();
+				flake[i] = Math.random() < 0.18 ? 1.0 : 0.0;  // ~18% bright glints; rest soft warm dust
+			}
+			const geo = new THREE.BufferGeometry();
+			geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+			geo.setAttribute("aSeed", new THREE.BufferAttribute(seeds, 1));
+			geo.setAttribute("aFlake", new THREE.BufferAttribute(flake, 1));
+
+			const mat = new THREE.ShaderMaterial({
+				transparent: true,
+				depthWrite: false,
+				blending: THREE.AdditiveBlending,
+				uniforms: {
+					u_time: { value: 0 },
+					u_size: { value: config.particleSize * renderer.getPixelRatio() },
+					u_colorA: { value: new THREE.Color(0x6a4420) },  // deep warm amber dust
+					u_colorB: { value: new THREE.Color(0xffd49a) }   // warm glow (not white)
+				},
+				vertexShader: `
+					uniform float u_time;
+					uniform float u_size;
+					attribute float aSeed;
+					attribute float aFlake;
+					varying float vFade;
+					varying float vFlake;
+					varying float vGlint;
+					void main() {
+						vec3 p = position;
+						float t = u_time * (0.12 + aSeed * 0.4);
+						// fluttering, drifting motion — flakes "fly"
+						p.x += sin(t + aSeed * 6.28) * 0.6;
+						p.y += cos(t * 0.7 + aSeed * 6.28) * 0.45 + sin(u_time * 0.08 + aSeed * 3.0) * 0.3;
+						p.z += sin(t * 0.9 + aSeed * 4.0) * 0.6;
+						vec4 mv = modelViewMatrix * vec4(p, 1.0);
+						vFade = clamp((-mv.z) / 16.0, 0.0, 1.0);
+						vFlake = aFlake;
+						// sharp periodic glint — flakes catching the light
+						float g = sin(u_time * (2.0 + aSeed * 5.0) + aSeed * 40.0);
+						vGlint = aFlake * pow(max(g, 0.0), 8.0);
+						gl_Position = projectionMatrix * mv;
+						float twinkle = 0.5 + 0.5 * sin(u_time * (1.0 + aSeed * 3.0) + aSeed * 30.0);
+						float baseSize = mix(0.35, 1.4, aSeed) * mix(0.8, 1.6, aFlake);
+						gl_PointSize = u_size * baseSize * (twinkle * 0.6 + 0.4 + vGlint * 1.6) / max(1.0, -mv.z);
+					}
+				`,
+				fragmentShader: `
+					uniform vec3 u_colorA;
+					uniform vec3 u_colorB;
+					varying float vFade;
+					varying float vFlake;
+					varying float vGlint;
+					void main() {
+						vec2 uv = gl_PointCoord - 0.5;
+						float d = dot(uv, uv);
+						// flakes have a sharp bright core; dust is softer
+						float sharp = mix(7.0, 26.0, vFlake);
+						float soft = exp(-d * sharp);
+						float core = exp(-d * 80.0);
+						if (soft < 0.02 && core < 0.02) discard;
+						vec3 col = mix(u_colorA, u_colorB, clamp(vFlake * 0.5 + vGlint + core, 0.0, 1.0));
+						float a = soft * (0.22 + vFade * 0.6) + core * (0.4 + vGlint * 0.6);
+						a *= (0.6 + vFade * 0.6);
+						gl_FragColor = vec4(col, a);
+					}
+				`
+			});
+
+			const points = new THREE.Points(geo, mat);
+			scene.add(points);
+			return { points, mat };
+		}
+		let particles = buildParticles();
+
+		function rebuildParticles() {
+			scene.remove(particles.points);
+			particles.points.geometry.dispose();
+			particles.mat.dispose();
+			particles = buildParticles();
+		}
+
+		// --- load the model (or fall back to a primitive) ----------------
+		let modelReady = false;
+
+		let coreMaxDim = 1;
+		function frameCore() {
+			// center the model, then size it via applyModelScale()
+			const box = new THREE.Box3().setFromObject(core);
+			const size = new THREE.Vector3();
+			const center = new THREE.Vector3();
+			box.getSize(size);
+			box.getCenter(center);
+			coreMaxDim = Math.max(size.x, size.y, size.z) || 1;
+			core.children.forEach((c) => c.position.sub(center));
+			applyModelScale();
+		}
+
+		function applyModelScale() {
+			// Uniform fit, then an intentional Z-flatten so the slim slabs read
+			// like the reference (depthScale = 1.0 keeps the true scene.glb depth).
+			const s = config.modelScale / coreMaxDim;
+			core.scale.set(s, s, s * config.depthScale);
+		}
+
+		// --- glass-through-glass: split fused mesh + multi-pass transmission --
+		// scene.glb is ONE fused mesh of both slabs. MeshTransmissionMaterial's
+		// multi-pass refraction hides "the glass mesh" to capture what's behind
+		// it — but if both slabs are one mesh, hiding it hides both and they
+		// can't refract each other. So we split the geometry into connected
+		// components (one Mesh per slab), each with its own material + render
+		// target, and capture each slab's backdrop separately in the render loop.
+
+		// Split a fused geometry into connected components (separate slabs).
+		// Lifted from glass-reference.html: weld coincident verts by quantized
+		// position, union-find over shared triangles, one BufferGeometry per group.
+		function splitConnected(geometry) {
+			const pos = geometry.attributes.position;
+			const nrm = geometry.attributes.normal || null;
+			const idx = geometry.index ? geometry.index.array : null;
+			const triCount = idx ? idx.length / 3 : pos.count / 3;
+			const tri = (t) => idx ? [idx[t*3], idx[t*3+1], idx[t*3+2]] : [t*3, t*3+1, t*3+2];
+
+			const q = 1e-4, map = new Map(), weld = new Int32Array(pos.count);
+			let next = 0;
+			for (let i = 0; i < pos.count; i++) {
+				const k = Math.round(pos.getX(i)/q)+'_'+Math.round(pos.getY(i)/q)+'_'+Math.round(pos.getZ(i)/q);
+				let r = map.get(k); if (r === undefined) { r = next++; map.set(k, r); }
+				weld[i] = r;
+			}
+			const parent = new Int32Array(next); for (let i=0;i<next;i++) parent[i]=i;
+			const find = a => { while (parent[a]!==a){ parent[a]=parent[parent[a]]; a=parent[a]; } return a; };
+			const uni  = (a,b)=>{ a=find(a); b=find(b); if(a!==b) parent[a]=b; };
+			for (let t=0;t<triCount;t++){ const [a,b,c]=tri(t); uni(weld[a],weld[b]); uni(weld[b],weld[c]); }
+			const groups = new Map();
+			for (let t=0;t<triCount;t++){ const root=find(weld[tri(t)[0]]); (groups.get(root)||groups.set(root,[]).get(root)).push(t); }
+			const geos = [];
+			for (const tris of groups.values()) {
+				const p = new Float32Array(tris.length*9);
+				const nn = nrm ? new Float32Array(tris.length*9) : null;
+				let o = 0;
+				for (const t of tris) { const v = tri(t);
+					for (let k=0;k<3;k++){ const vi=v[k];
+						p[o]=pos.getX(vi); p[o+1]=pos.getY(vi); p[o+2]=pos.getZ(vi);
+						if (nn){ nn[o]=nrm.getX(vi); nn[o+1]=nrm.getY(vi); nn[o+2]=nrm.getZ(vi); }
+						o+=3;
+					}
+				}
+				const g = new THREE.BufferGeometry();
+				g.setAttribute('position', new THREE.BufferAttribute(p,3));
+				if (nn) g.setAttribute('normal', new THREE.BufferAttribute(nn,3)); else g.computeVertexNormals();
+				geos.push(g);
+			}
+			return geos;
+		}
+
+		function makeGlass() {
+			const m = new MeshTransmissionMaterial(isMobile ? 6 : 10, false);
+			m.transmission = 1; m._transmission = 1;
+			m.thickness = 0.25; m.ior = 1.5; m.roughness = 0.0;   // optical depth only (NOT geometry); lower = slimmer-looking glass
+			m.chromaticAberration = 0.04; m.anisotropicBlur = 0.1;
+			m.clearcoat = 1; m.clearcoatRoughness = 0;
+			m.attenuationColor = new THREE.Color(0xffd9a8); m.attenuationDistance = 4;
+			m.envMapIntensity = 1.6;
+			m.color = new THREE.Color(0xffffff);
+			return m;
+		}
+
+		// Each slab gets its own mesh + material + refraction buffer (fbo).
+		const glassMeshes = [];          // each: { mesh, mat, fbo }
+		const discard = new DiscardMaterial();
+
+		function addSlab(geo) {
+			const mat = makeGlass();
+			const mesh = new THREE.Mesh(geo, mat);
+			const fbo = new THREE.WebGLRenderTarget(Math.round(window.innerWidth * fboScale), Math.round(window.innerHeight * fboScale), { type: THREE.HalfFloatType });
+			mat.buffer = fbo.texture;
+			core.add(mesh);
+			glassMeshes.push({ mesh, mat, fbo });
+		}
+
+		// Dispose + remove all current slabs (used before loading a new model).
+		function clearSlabs() {
+			for (const g of glassMeshes) {
+				core.remove(g.mesh);
+				g.mesh.geometry.dispose();
+				g.mat.dispose();
+				g.fbo.dispose();
+			}
+			glassMeshes.length = 0;
+		}
+
+		// Turn ANY loaded glTF scene into glass slabs: bake each mesh's world
+		// transform into its geometry, split into connected components, and add
+		// each as its own glass slab. Works for the fused logo and for arbitrary
+		// uploaded models (which may have several meshes).
+		function buildGlassFrom(gltfScene) {
+			clearSlabs();
+			gltfScene.updateMatrixWorld(true);
+			const geos = [];
+			gltfScene.traverse((o) => {
+				if (!o.isMesh || !o.geometry) return;
+				const g = o.geometry.clone();
+				if (!g.attributes.normal) g.computeVertexNormals();
+				g.applyMatrix4(o.matrixWorld);   // keep multi-mesh layout
+				splitConnected(g).forEach((part) => geos.push(part));
+				g.dispose();
+			});
+			if (!geos.length) { addFallback(); return; }
+			geos.forEach(addSlab);
+			frameCore();
+			modelReady = true;
+		}
+
+		function addFallback() {
+			clearSlabs();
+			addSlab(new THREE.TorusKnotGeometry(1, 0.34, 180, 32));
+			frameCore();
+			modelReady = true;
+		}
+
+		new GLTFLoader().load(
+			"scene.glb",
+			(gltf) => buildGlassFrom(gltf.scene),
+			undefined,
+			() => {
+				noticeEl.classList.add("show");
+				noticeEl.innerHTML = "Couldn't load <code>scene.glb</code>. " +
+					"Open this page from a local server (e.g. <code>python3 -m http.server</code>) " +
+					"so the model can load. Showing a placeholder for now.";
+				addFallback();
+			}
+		);
+
+		// --- ground under the logo ---------------------------------------
+		// model.glb is a rocky terrain (RealityCapture scan). It lives in the
+		// scene inside its own pivot so it can spin in place (driven by scroll
+		// like the logo), is lit by the env, and is refracted by the glass
+		// above it. Auto-fit: scale so its largest horizontal span ≈ GROUND_SPAN,
+		// center it in the pivot, then the pivot is placed/scaled/spun by the
+		// control-panel sliders via applyGround().
+		const GROUND_SPAN = 22;     // base world units across (x/z) before the size slider
+		const GROUND_TOP_Y = -2.2;  // base height of the ground's top, just below the logo
+		const groundPivot = new THREE.Group();
+		scene.add(groundPivot);
+		let groundReady = false;
+		let groundHalfH = 0;        // half-height after auto-fit (for top alignment)
+
+		function applyGround() {
+			if (!groundReady) return;
+			groundPivot.scale.setScalar(config.groundScale);
+			groundPivot.position.set(
+				config.groundX,
+				GROUND_TOP_Y - groundHalfH * config.groundScale + config.groundY,
+				config.groundZ
+			);
+		}
+
+		let groundObj = null;
+
+		// Remove + dispose the current ground before loading a replacement.
+		function clearGround() {
+			if (!groundObj) return;
+			groundPivot.remove(groundObj);
+			groundObj.traverse((o) => {
+				if (!o.isMesh) return;
+				o.geometry?.dispose();
+				if (o.material) { o.material.map?.dispose?.(); o.material.dispose(); }
+			});
+			groundObj = null;
+			groundReady = false;
+		}
+
+		// Load a ground model from a URL (the default model.glb or an upload):
+		// auto-fit, center on the pivot, and give untextured scans a dark rock
+		// look. Replaces whatever ground is currently shown.
+		function loadGround(url, onError) {
+			new GLTFLoader().load(
+				url,
+				(gltf) => {
+					clearGround();
+					const ground = gltf.scene;
+					let box = new THREE.Box3().setFromObject(ground);
+					const size = box.getSize(new THREE.Vector3());
+					const span = Math.max(size.x, size.z) || 1;
+					const fit = GROUND_SPAN / span;
+					ground.scale.setScalar(fit);
+
+					// center the geometry on the pivot origin so it spins in place
+					box = new THREE.Box3().setFromObject(ground);
+					ground.position.sub(box.getCenter(new THREE.Vector3()));
+					groundHalfH = size.y * fit / 2;
+
+					// Textured meshes → crisp/HD: max anisotropy (sharp at grazing
+					// angles), correct color space, trilinear mipmaps. Untextured
+					// meshes (e.g. model.glb's missing diffuse) get a dark rough
+					// rock look so they aren't flat white.
+					const maxAniso = renderer.capabilities.getMaxAnisotropy();
+					ground.traverse((o) => {
+						if (!o.isMesh || !o.material) return;
+						const m = o.material;
+						// a real texture (not the 1×1 dummy from a missing file)
+						const realTex = m.map && m.map.image && m.map.image.width > 2;
+						if (realTex) {
+							m.map.anisotropy = maxAniso;
+							m.map.colorSpace = THREE.SRGBColorSpace;
+							m.map.generateMipmaps = true;
+							m.map.minFilter = THREE.LinearMipmapLinearFilter;
+							m.map.needsUpdate = true;
+						} else {
+							m.map = null;
+							m.color = new THREE.Color(0x4a3a2c);
+							m.roughness = 1.0;
+							m.metalness = 0.0;
+							m.envMapIntensity = 0.6;
+						}
+					});
+
+					groundPivot.add(ground);
+					groundObj = ground;
+					groundReady = true;
+					applyGround();
+					URL.revokeObjectURL(url);   // no-op for non-blob URLs
+				},
+				undefined,
+				(e) => { URL.revokeObjectURL(url); if (onError) onError(e); }
+			);
+		}
+
+		loadGround("model.glb", () => console.warn("[ground] couldn't load model.glb (serve over http)."));
+
+		// Replace the GROUND (bottom) model live from a user-picked file.
+		function loadGroundFile(file) {
+			if (!file) return;
+			loadGround(URL.createObjectURL(file), () => {
+				noticeEl.classList.add("show");
+				noticeEl.innerHTML = "Couldn't read that file — make sure it's a valid <code>.glb</code> or <code>.gltf</code>.";
+				setTimeout(() => noticeEl.classList.remove("show"), 4000);
+			});
+		}
+
+		// --- scroll progress bar -----------------------------------------
+		function updateOverlay(p) {
+			progressEl.style.transform = `scaleX(${p})`;
+		}
+
+		// --- post-processing pipeline ------------------------------------
+		// RenderPass → Bloom → DoF(Bokeh) → Grade(god-rays + vignette + chromatic
+		// aberration + film grain/dither) → OutputPass (tone map + sRGB).
+		const composer = new EffectComposer(renderer);
+		composer.addPass(new RenderPass(scene, camera));
+
+		const bloomPass = new UnrealBloomPass(
+			new THREE.Vector2(window.innerWidth, window.innerHeight),
+			config.bloom, 0.6, 0.85   // strength, radius, threshold
+		);
+		composer.addPass(bloomPass);
+
+		// Depth of field is a whole extra scene (depth) pass — desktop only.
+		let bokehPass = null;
+		if (!isMobile) {
+			bokehPass = new BokehPass(scene, camera, { focus: 9.0, aperture: 0.0006, maxblur: 0.01 });
+			composer.addPass(bokehPass);
+		}
+
+		// Grade pass: god-rays (radial light scattering toward the sun), vignette,
+		// chromatic aberration, and animated grain + dither (also breaks banding).
+		const gradePass = new ShaderPass({
+			uniforms: {
+				tDiffuse: { value: null },
+				uTime: { value: 0 },
+				uGrain: { value: config.grain },
+				uAspect: { value: window.innerWidth / window.innerHeight }
+			},
+			vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+			fragmentShader: `
+				uniform sampler2D tDiffuse;
+				uniform float uTime, uGrain, uAspect;
+				varying vec2 vUv;
+				float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+				void main(){
+					vec2 uv = vUv;
+					// chromatic aberration — grows toward the edges
+					vec2 d = uv - 0.5;
+					float r2 = dot(d, d);
+					vec2 off = d * r2 * 0.06;
+					vec3 col;
+					col.r = texture2D(tDiffuse, uv + off).r;
+					col.g = texture2D(tDiffuse, uv).g;
+					col.b = texture2D(tDiffuse, uv - off).b;
+
+					// vignette
+					col *= smoothstep(1.15, 0.35, length(d * vec2(uAspect, 1.0)));
+
+					// film grain + dither (breaks gradient banding)
+					float g = hash(uv * vec2(1920.0, 1080.0) + uTime) - 0.5;
+					col += g * uGrain;
+
+					gl_FragColor = vec4(col, 1.0);
+				}
+			`
+		});
+		composer.addPass(gradePass);
+		composer.addPass(new OutputPass());
+
+		// --- render loop --------------------------------------------------
+		const clock = new THREE.Clock();
+		let lastElapsed = 0;
+		function tick() {
+			const t = clock.getElapsedTime();
+			const dt = Math.min(0.05, t - lastElapsed);
+			lastElapsed = t;
+			flakeTime += dt * config.glowSpeed;   // glow/flake speed slider
+
+			// smooth the scroll value for inertial rotation
+			easedProgress += (scrollProgress - easedProgress) * 0.08;
+			pointer.x += (pointer.tx - pointer.x) * 0.05;
+			pointer.y += (pointer.ty - pointer.y) * 0.05;
+
+			if (modelReady) {
+				// scroll scrubs rotationTurns full turns; pointer adds parallax tilt
+				core.rotation.y = easedProgress * Math.PI * config.rotationTurns + pointer.x * 0.4;
+				core.rotation.x = Math.sin(easedProgress * Math.PI * 2) * 0.25 - pointer.y * 0.25;
+			}
+
+			// ground spins in place, driven by scroll (like the logo)
+			if (groundReady) {
+				groundPivot.rotation.y = easedProgress * Math.PI * config.groundTurns;
+			}
+
+			// rotate the sky + environment so the warm glow sweeps through view
+			// (the lively feel from orbiting in glass-reference):
+			//  - scroll spin (skyTurns) at its OWN rate, distinct from the logo
+			//  - constant drift (skyDrift) so it moves even when idle
+			//  - a touch of OPPOSITE pointer influence vs the logo → parallax depth
+			// environmentRotation tracks it so reflections stay in sync.
+			scene.backgroundRotation.y =
+				easedProgress * Math.PI * config.skyTurns + t * config.skyDrift - pointer.x * 0.15;
+			scene.environmentRotation.y = scene.backgroundRotation.y;
+
+			// particles slowly counter-rotate and react to scroll
+			particles.points.rotation.y = -easedProgress * Math.PI * 1.5 - t * 0.02;
+			particles.mat.uniforms.u_time.value = flakeTime;
+
+			// gentle camera dolly through the scroll
+			camera.position.z = config.cameraDist - easedProgress * 2.2;
+			camera.position.x = pointer.x * 0.6;
+			camera.position.y = 0.3 + pointer.y * 0.4;   // keep the downward tilt so the warm gradient fills the frame
+			camera.lookAt(0, 0, 0);
+
+			updateOverlay(easedProgress);
+
+			// drifting mist
+			mistLayers.forEach((m) => {
+				m.position.x = m.userData.baseX + Math.sin(t * 0.05 + m.userData.seed) * 2.0;
+				m.material.opacity = 0.045 + 0.03 * (0.5 + 0.5 * Math.sin(t * 0.2 + m.userData.seed));
+			});
+
+			// post uniforms
+			gradePass.uniforms.uGrain.value = config.grain;
+			gradePass.uniforms.uTime.value = t;
+			bloomPass.strength = config.bloom;
+			if (bokehPass) {
+				bokehPass.uniforms["focus"].value = camera.position.length();   // keep the logo in focus
+				bokehPass.uniforms["maxblur"].value = config.dof * 0.015;
+			}
+
+			// Multi-pass transmission: for each slab, hide ONLY that slab (swap
+			// to DiscardMaterial) and render the rest of the scene — including the
+			// other slabs — into its buffer, so the front slab refracts the back
+			// one. Then restore and do the final render. NoToneMapping for the
+			// buffer passes (the captured texture must stay linear).
+			const oldTone = renderer.toneMapping;
+			for (const g of glassMeshes) {
+				g.mat.time = t;
+				g.mesh.material = discard;
+				renderer.toneMapping = THREE.NoToneMapping;
+				renderer.setRenderTarget(g.fbo);
+				renderer.render(scene, camera);
+				renderer.setRenderTarget(null);
+				renderer.toneMapping = oldTone;
+				g.mesh.material = g.mat;   // restore; it samples g.fbo
+			}
+
+			composer.render();   // scene → bloom → DoF → grade(grain/vignette/CA) → output
+
+			// rolling FPS readout (updates ~2×/sec)
+			fpsFrames++;
+			if (t - fpsLast >= 0.5) {
+				fpsEl.textContent = Math.round(fpsFrames / (t - fpsLast)) + " fps";
+				fpsFrames = 0; fpsLast = t;
+			}
+
+			requestAnimationFrame(tick);
+		}
+
+		// --- events -------------------------------------------------------
+		window.addEventListener("scroll", readScroll, { passive: true });
+		window.addEventListener("resize", () => {
+			camera.aspect = window.innerWidth / window.innerHeight;
+			camera.updateProjectionMatrix();
+			renderer.setSize(window.innerWidth, window.innerHeight);
+			composer.setSize(window.innerWidth, window.innerHeight);
+			bloomPass.setSize(window.innerWidth, window.innerHeight);
+			gradePass.uniforms.uAspect.value = window.innerWidth / window.innerHeight;
+			glassMeshes.forEach((g) => g.fbo.setSize(Math.round(window.innerWidth * fboScale), Math.round(window.innerHeight * fboScale)));
+			particles.mat.uniforms.u_size.value = config.particleSize * renderer.getPixelRatio();
+			readScroll();
+		});
+		window.addEventListener("pointermove", (e) => {
+			pointer.tx = (e.clientX / window.innerWidth) * 2 - 1;
+			pointer.ty = -((e.clientY / window.innerHeight) * 2 - 1);
+		}, { passive: true });
+
+		// --- upload: file picker + drag-and-drop to swap the GROUND live ---
+		document.getElementById("upload").addEventListener("change", (e) => {
+			loadGroundFile(e.target.files[0]);
+		});
+		window.addEventListener("dragover", (e) => e.preventDefault());
+		window.addEventListener("drop", (e) => {
+			e.preventDefault();
+			loadGroundFile(e.dataTransfer.files[0]);
+		});
+
+		// --- control panel wiring ----------------------------------------
+		const panel = document.getElementById("panel");
+		document.getElementById("panelToggle").addEventListener("click", () => {
+			panel.classList.toggle("collapsed");
+		});
+
+		// Copy the current control values (config) to the clipboard as a JS
+		// object literal, so a tuned look can be saved / pasted back in.
+		const copyBtn = document.getElementById("copyBtn");
+		copyBtn.addEventListener("click", () => {
+			const text = "{\n" +
+				Object.entries(config).map(([k, v]) => `\t${k}: ${v},`).join("\n") +
+				"\n}";
+			navigator.clipboard.writeText(text).then(() => {
+				copyBtn.textContent = "Copied!";
+				setTimeout(() => (copyBtn.textContent = "Copy settings"), 1200);
+			}).catch(() => {
+				copyBtn.textContent = "Copy failed";
+				setTimeout(() => (copyBtn.textContent = "Copy settings"), 1200);
+			});
+		});
+
+		function bindSlider(id, valId, onChange, fmt) {
+			const slider = document.getElementById(id);
+			const valEl = document.getElementById(valId);
+			slider.addEventListener("input", () => {
+				const v = parseFloat(slider.value);
+				valEl.textContent = fmt(v);
+				onChange(v);
+			});
+		}
+
+		bindSlider("s-count", "v-count", (v) => {
+			config.particleCount = Math.round(v);
+			rebuildParticles();
+		}, (v) => String(Math.round(v)));
+
+		bindSlider("s-glow", "v-glow", (v) => {
+			config.glowSpeed = v;
+		}, (v) => v.toFixed(2) + "×");
+
+		bindSlider("s-size", "v-size", (v) => {
+			config.particleSize = v;
+			particles.mat.uniforms.u_size.value = v * renderer.getPixelRatio();
+		}, (v) => String(Math.round(v)));
+
+		bindSlider("s-scale", "v-scale", (v) => {
+			config.modelScale = v;
+			applyModelScale();
+		}, (v) => v.toFixed(1));
+
+		bindSlider("s-cam", "v-cam", (v) => { config.cameraDist = v; }, (v) => v.toFixed(1));
+
+		bindSlider("s-depth", "v-depth", (v) => {
+			config.depthScale = v;
+			applyModelScale();
+		}, (v) => v.toFixed(2));
+
+		bindSlider("s-rot", "v-rot", (v) => {
+			config.rotationTurns = v;
+		}, (v) => v.toFixed(1));
+
+		bindSlider("s-gx", "v-gx", (v) => { config.groundX = v; applyGround(); }, (v) => v.toFixed(1));
+		bindSlider("s-gy", "v-gy", (v) => { config.groundY = v; applyGround(); }, (v) => v.toFixed(1));
+		bindSlider("s-gz", "v-gz", (v) => { config.groundZ = v; applyGround(); }, (v) => v.toFixed(1));
+		bindSlider("s-gscale", "v-gscale", (v) => { config.groundScale = v; applyGround(); }, (v) => v.toFixed(2));
+		bindSlider("s-gturns", "v-gturns", (v) => { config.groundTurns = v; }, (v) => v.toFixed(1));
+		bindSlider("s-sky", "v-sky", (v) => { config.skyTurns = v; }, (v) => v.toFixed(1));
+		bindSlider("s-skydrift", "v-skydrift", (v) => { config.skyDrift = v; }, (v) => v.toFixed(2));
+		bindSlider("s-haze", "v-haze", (v) => { config.haze = v; hazeMat.opacity = v; }, (v) => v.toFixed(2));
+		bindSlider("s-bloom", "v-bloom", (v) => { config.bloom = v; }, (v) => v.toFixed(2));
+		bindSlider("s-dof", "v-dof", (v) => { config.dof = v; }, (v) => v.toFixed(2));
+		bindSlider("s-grain", "v-grain", (v) => { config.grain = v; }, (v) => v.toFixed(2));
+
+		readScroll();
+		tick();
+	})();
+	</script>
+</body>
+</html>

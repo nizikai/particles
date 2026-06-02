@@ -1,0 +1,6 @@
+- generic [active] [ref=e1]:
+  - generic "Golden particle ocean scene" [ref=e2]
+  - banner "Scene title":
+    - generic: Nizikai
+    - heading "Neon Obelisk" [level=1]
+    - paragraph: Particle Sea

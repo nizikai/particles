@@ -1,0 +1,194 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Glass-through-glass reference</title>
+<style>
+  html,body{margin:0;height:100%;background:#000;overflow:hidden;font-family:ui-monospace,monospace}
+  #note{position:fixed;left:16px;bottom:14px;color:#caa37a;font-size:12px;letter-spacing:.04em;
+        opacity:.8;line-height:1.6;max-width:460px;pointer-events:none}
+  #note b{color:#ffce9a}
+  #err{position:fixed;left:16px;top:16px;color:#ff8a6a;font-size:12px;white-space:pre;display:none}
+</style>
+<canvas id="c"></canvas>
+<div id="note">
+  <b>GLASS-THROUGH-GLASS REFERENCE</b><br>
+  Drag to orbit. The fused logo is split into separate slabs at load, each with its
+  own refraction buffer, so the front slab actually refracts the back one. Environment
+  is generated in code (dark + one warm glow). Put <b>scene.glb</b> + <b>MeshTransmissionMaterial.js</b> next to this file and serve the folder.
+</div>
+<div id="err"></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.169.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.169.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader }    from 'three/addons/loaders/GLTFLoader.js';
+import { MeshTransmissionMaterial, DiscardMaterial } from './MeshTransmissionMaterial.js';
+
+const canvas   = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping         = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+renderer.outputColorSpace    = THREE.SRGBColorSpace;
+
+const scene  = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(35, innerWidth/innerHeight, 0.1, 100);
+camera.position.set(0, 0.3, 9);
+
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true;
+controls.autoRotate = true;
+controls.autoRotateSpeed = 0.7;
+
+/* ---- procedural high-contrast environment: dark + one warm glow ------------ */
+function makeEnvTexture() {
+  const cv = document.createElement('canvas'); cv.width = 1024; cv.height = 512;
+  const x = cv.getContext('2d');
+  const g = x.createLinearGradient(0, 0, 0, 512);
+  g.addColorStop(0.00, '#000000'); g.addColorStop(0.55, '#1a0c03');
+  g.addColorStop(0.78, '#4d1f02'); g.addColorStop(1.00, '#0a0502');
+  x.fillStyle = g; x.fillRect(0, 0, 1024, 512);
+  const r = x.createRadialGradient(512, 330, 0, 512, 330, 240);
+  r.addColorStop(0.00, '#fff4e0'); r.addColorStop(0.25, '#ffb24d');
+  r.addColorStop(0.60, '#7a3a05'); r.addColorStop(1.00, 'rgba(0,0,0,0)');
+  x.fillStyle = r; x.fillRect(0, 0, 1024, 512);
+  const tex = new THREE.CanvasTexture(cv);
+  tex.mapping = THREE.EquirectangularReflectionMapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+const equirect = makeEnvTexture();
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromEquirectangular(equirect).texture;
+scene.background  = equirect;
+
+/* ---- split a fused geometry into connected components (separate slabs) ------ */
+function splitConnected(geometry) {
+  const pos = geometry.attributes.position;
+  const nrm = geometry.attributes.normal || null;
+  const idx = geometry.index ? geometry.index.array : null;
+  const triCount = idx ? idx.length / 3 : pos.count / 3;
+  const tri = (t) => idx ? [idx[t*3], idx[t*3+1], idx[t*3+2]] : [t*3, t*3+1, t*3+2];
+
+  // weld coincident vertices by quantized position
+  const q = 1e-4, map = new Map(), weld = new Int32Array(pos.count);
+  let next = 0;
+  for (let i = 0; i < pos.count; i++) {
+    const k = Math.round(pos.getX(i)/q)+'_'+Math.round(pos.getY(i)/q)+'_'+Math.round(pos.getZ(i)/q);
+    let r = map.get(k); if (r === undefined) { r = next++; map.set(k, r); }
+    weld[i] = r;
+  }
+  // union-find over welded verts sharing a triangle
+  const parent = new Int32Array(next); for (let i=0;i<next;i++) parent[i]=i;
+  const find = a => { while (parent[a]!==a){ parent[a]=parent[parent[a]]; a=parent[a]; } return a; };
+  const uni  = (a,b)=>{ a=find(a); b=find(b); if(a!==b) parent[a]=b; };
+  for (let t=0;t<triCount;t++){ const [a,b,c]=tri(t); uni(weld[a],weld[b]); uni(weld[b],weld[c]); }
+  // group triangles by component root
+  const groups = new Map();
+  for (let t=0;t<triCount;t++){ const root=find(weld[tri(t)[0]]); (groups.get(root)||groups.set(root,[]).get(root)).push(t); }
+  // build a BufferGeometry per group
+  const geos = [];
+  for (const tris of groups.values()) {
+    const p = new Float32Array(tris.length*9);
+    const nn = nrm ? new Float32Array(tris.length*9) : null;
+    let o = 0;
+    for (const t of tris) { const v = tri(t);
+      for (let k=0;k<3;k++){ const vi=v[k];
+        p[o]=pos.getX(vi); p[o+1]=pos.getY(vi); p[o+2]=pos.getZ(vi);
+        if (nn){ nn[o]=nrm.getX(vi); nn[o+1]=nrm.getY(vi); nn[o+2]=nrm.getZ(vi); }
+        o+=3;
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(p,3));
+    if (nn) g.setAttribute('normal', new THREE.BufferAttribute(nn,3)); else g.computeVertexNormals();
+    geos.push(g);
+  }
+  return geos;
+}
+
+function makeGlass() {
+  const m = new MeshTransmissionMaterial(10, false);
+  m.transmission = 1; m._transmission = 1;
+  m.thickness = 1.0; m.ior = 1.5; m.roughness = 0.0;
+  m.chromaticAberration = 0.06; m.anisotropicBlur = 0.1;
+  m.clearcoat = 1; m.clearcoatRoughness = 0;
+  m.attenuationColor = new THREE.Color(0xffd9a8); m.attenuationDistance = 4;
+  m.envMapIntensity = 1.6;
+  m.color = new THREE.Color(0xffffff);
+  return m;
+}
+
+const glassMeshes = [];      // each: { mesh, mat, fbo }
+const pivot = new THREE.Group();
+scene.add(pivot);
+
+const loader = new GLTFLoader();
+loader.load('scene.glb', (gltf) => {
+  let src = null;
+  gltf.scene.traverse(o => { if (o.isMesh && !src) src = o; });
+  if (!src) throw new Error('no mesh in glb');
+
+  const parts = splitConnected(src.geometry);
+  console.log('[glass] split into', parts.length, 'slab(s)');
+
+  for (const geo of parts) {
+    const mat = makeGlass();
+    const mesh = new THREE.Mesh(geo, mat);
+    const fbo = new THREE.WebGLRenderTarget(innerWidth, innerHeight, { type: THREE.HalfFloatType });
+    mat.buffer = fbo.texture;
+    pivot.add(mesh);
+    glassMeshes.push({ mesh, mat, fbo });
+  }
+
+  // center + scale the whole logo
+  const box = new THREE.Box3().setFromObject(pivot);
+  const size = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+  pivot.children.forEach(c => c.position.sub(center));
+  pivot.scale.setScalar(4.0 / Math.max(size.x, size.y, size.z));
+}, undefined, (e) => {
+  const el = document.getElementById('err');
+  el.style.display = 'block';
+  el.textContent = 'Could not load scene.glb — serve the folder over http\n(file:// blocks module + glb loading).\n' + e;
+});
+
+/* ---- multi-pass render: each slab captures the scene without itself ---------- */
+const discard = new DiscardMaterial();
+const clock = new THREE.Clock();
+
+function render() {
+  const t = clock.getElapsedTime();
+  const oldTone = renderer.toneMapping;
+
+  for (const g of glassMeshes) {
+    g.mat.time = t;
+    // hide THIS slab; everything else (incl. other slabs) stays visible
+    g.mesh.material = discard;
+    renderer.toneMapping = THREE.NoToneMapping;
+    renderer.setRenderTarget(g.fbo);
+    renderer.render(scene, camera);
+    renderer.setRenderTarget(null);
+    renderer.toneMapping = oldTone;
+    g.mesh.material = g.mat;          // restore; it samples g.fbo
+  }
+  renderer.render(scene, camera);
+}
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  glassMeshes.forEach(g => g.fbo.setSize(innerWidth, innerHeight));
+});
+
+(function loop(){ requestAnimationFrame(loop); controls.update(); render(); })();
+</script>

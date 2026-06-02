@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Crater — cinematic god-ray scene</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #05070a; overflow: hidden; }
+      #app { position: fixed; inset: 0; }
+      /* Tiny loading hint that fades once the scene is up */
+      #hint {
+        position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
+        font: 12px/1.4 ui-monospace, monospace; color: #6b7480; letter-spacing: .08em;
+        pointer-events: none; transition: opacity 1.5s ease; opacity: .6;
+      }
+    </style>
+    <script type="module" crossorigin src="/assets/index-wZD5DlIq.js"></script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <div id="hint">DRAG TO LOOK · SCROLL TO DOLLY</div>
+  </body>
+</html>
