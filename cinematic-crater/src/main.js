@@ -27,7 +27,7 @@ const renderer = new THREE.WebGLRenderer({
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.0;
+renderer.toneMappingExposure = 1.6;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -38,16 +38,16 @@ document.getElementById('app').appendChild(renderer.domElement);
 // -----------------------------------------------------------------------------
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x05070a);
-scene.fog = new THREE.FogExp2(0x0a0d12, 0.011);
+scene.fog = new THREE.FogExp2(0x0c1118, 0.006);
 
 // -----------------------------------------------------------------------------
 // Camera + controls — slow auto-orbit for the floaty drift; drag/scroll to look.
 // -----------------------------------------------------------------------------
 const camera = new THREE.PerspectiveCamera(52, window.innerWidth / window.innerHeight, 0.1, 600);
-camera.position.set(0, 6, 74);
+camera.position.set(0, 20, 95);
 
 const controls = new OrbitControls(camera, renderer.domElement);
-controls.target.set(0, 26, -8); // look UP toward the light so the beam is in frame
+controls.target.set(0, 5, 0); // frame the basin floor + figure, with the light high above
 controls.enableDamping = true;
 controls.dampingFactor = 0.05;
 controls.autoRotate = true;
@@ -71,7 +71,7 @@ const sunMesh = new THREE.Mesh(
 sunMesh.position.copy(SUN_POS);
 scene.add(sunMesh);
 
-const keyLight = new THREE.DirectionalLight(0xcdddff, 3.2);
+const keyLight = new THREE.DirectionalLight(0xeaf2ff, 4.8);
 keyLight.position.copy(SUN_POS);
 keyLight.target.position.set(0, -8, 0);
 keyLight.castShadow = true;
@@ -86,10 +86,10 @@ keyLight.shadow.bias = -0.0004;
 scene.add(keyLight);
 scene.add(keyLight.target);
 
-// Very low cold ambient so shadow areas aren't pure black.
-scene.add(new THREE.AmbientLight(0x223044, 0.35));
-// Subtle blue bounce from below to read the dust.
-const bounce = new THREE.HemisphereLight(0x35506f, 0x0a0c10, 0.4);
+// Low cold ambient so shadow areas read without going pure black.
+scene.add(new THREE.AmbientLight(0x35506f, 0.7));
+// Blue bounce from below to read the dust and basin floor.
+const bounce = new THREE.HemisphereLight(0x4a6885, 0x0a0c10, 0.7);
 scene.add(bounce);
 
 // -----------------------------------------------------------------------------
@@ -137,7 +137,7 @@ function animate() {
 
   // Light intensity shimmer — gentle flicker on key light + sun core.
   const shimmer = 1.0 + 0.06 * Math.sin(t * 1.7) + 0.03 * Math.sin(t * 4.3);
-  keyLight.intensity = 3.2 * shimmer;
+  keyLight.intensity = 4.8 * shimmer;
   sunMesh.scale.setScalar(1.0 + 0.04 * Math.sin(t * 2.1));
 
   haze.update(t);

@@ -1,8 +1,0 @@
-[  105484ms] [WARNING] [.WebGL-0x10400473000] GL_INVALID_OPERATION: glBlitFramebuffer: Read and write depth stencil attachments cannot be the same image. @ http://localhost:5173/?multinodepth:0
-[  105519ms] [WARNING] [.WebGL-0x10400473000] GL_INVALID_OPERATION: glBlitFramebuffer: Read and write depth stencil attachments cannot be the same image. @ http://localhost:5173/?multinodepth:0
-[  105551ms] [WARNING] [.WebGL-0x10400473000] GL_INVALID_OPERATION: glBlitFramebuffer: Read and write depth stencil attachments cannot be the same image. @ http://localhost:5173/?multinodepth:0
-[  105585ms] [WARNING] [.WebGL-0x10400473000] GL_INVALID_OPERATION: glBlitFramebuffer: Read and write depth stencil attachments cannot be the same image. @ http://localhost:5173/?multinodepth:0
-[  105618ms] [WARNING] [.WebGL-0x10400473000] GL_INVALID_OPERATION: glBlitFramebuffer: Read and write depth stencil attachments cannot be the same image. @ http://localhost:5173/?multinodepth:0
-[  105651ms] [WARNING] [.WebGL-0x10400473000] GL_INVALID_OPERATION: glBlitFramebuffer: Read and write depth stencil attachments cannot be the same image. @ http://localhost:5173/?multinodepth:0
-[  105684ms] [WARNING] [.WebGL-0x10400473000] GL_INVALID_OPERATION: glBlitFramebuffer: Read and write depth stencil attachments cannot be the same image. @ http://localhost:5173/?multinodepth:0
-[  105684ms] [WARNING] WebGL: too many errors, no more errors will be reported to the console for this context. @ http://localhost:5173/?multinodepth:0

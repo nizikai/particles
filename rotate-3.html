@@ -289,16 +289,28 @@
 				<input type="range" id="s-count" min="300" max="9000" step="100" value="2000" />
 			</div>
 			<div class="ctrl">
-				<label>Glow speed <span class="val" id="v-glow">0.30×</span></label>
-				<input type="range" id="s-glow" min="0" max="4" step="0.05" value="0.3" />
+				<label>Glow speed <span class="val" id="v-glow">0.25×</span></label>
+				<input type="range" id="s-glow" min="0" max="4" step="0.05" value="0.25" />
 			</div>
 			<div class="ctrl">
-				<label>Flake size <span class="val" id="v-size">10</span></label>
-				<input type="range" id="s-size" min="8" max="90" step="1" value="10" />
+				<label>Flake size <span class="val" id="v-size">20</span></label>
+				<input type="range" id="s-size" min="8" max="90" step="1" value="20" />
 			</div>
 			<div class="ctrl">
 				<label>Model size <span class="val" id="v-scale">1.5</span></label>
 				<input type="range" id="s-scale" min="0" max="9" step="0.1" value="1.5" />
+			</div>
+			<div class="ctrl">
+				<label>Model X <span class="val" id="v-mx">0.0</span></label>
+				<input type="range" id="s-mx" min="-10" max="10" step="0.1" value="0" />
+			</div>
+			<div class="ctrl">
+				<label>Model Y <span class="val" id="v-my">0.3</span></label>
+				<input type="range" id="s-my" min="-10" max="10" step="0.1" value="0.3" />
+			</div>
+			<div class="ctrl">
+				<label>Model Z <span class="val" id="v-mz">0.0</span></label>
+				<input type="range" id="s-mz" min="-10" max="10" step="0.1" value="0" />
 			</div>
 			<div class="ctrl">
 				<label>Camera dist <span class="val" id="v-cam">10.0</span></label>
@@ -317,8 +329,8 @@
 				<input type="range" id="s-gx" min="-15" max="15" step="0.1" value="1" />
 			</div>
 			<div class="ctrl">
-				<label>Ground Y <span class="val" id="v-gy">0.2</span></label>
-				<input type="range" id="s-gy" min="-15" max="15" step="0.1" value="0.2" />
+				<label>Ground Y <span class="val" id="v-gy">1.1</span></label>
+				<input type="range" id="s-gy" min="-15" max="15" step="0.1" value="1.1" />
 			</div>
 			<div class="ctrl">
 				<label>Ground Z <span class="val" id="v-gz">-9.0</span></label>
@@ -333,24 +345,28 @@
 				<input type="range" id="s-gturns" min="-12" max="12" step="0.5" value="-2" />
 			</div>
 			<div class="ctrl">
-				<label>Sky spin <span class="val" id="v-sky">-2.5</span></label>
-				<input type="range" id="s-sky" min="-4" max="4" step="0.1" value="-2.5" />
+				<label>Sky spin <span class="val" id="v-sky">-2.0</span></label>
+				<input type="range" id="s-sky" min="-4" max="4" step="0.1" value="-2" />
 			</div>
 			<div class="ctrl">
-				<label>Sky drift <span class="val" id="v-skydrift">0.02</span></label>
-				<input type="range" id="s-skydrift" min="0" max="0.3" step="0.01" value="0.02" />
+				<label>Sky angle <span class="val" id="v-skyangle">50°</span></label>
+				<input type="range" id="s-skyangle" min="0" max="360" step="1" value="50" />
+			</div>
+			<div class="ctrl">
+				<label>Sky drift <span class="val" id="v-skydrift">0.00</span></label>
+				<input type="range" id="s-skydrift" min="0" max="0.3" step="0.01" value="0" />
 			</div>
 			<div class="ctrl">
 				<label>Haze <span class="val" id="v-haze">0.05</span></label>
 				<input type="range" id="s-haze" min="0" max="1" step="0.05" value="0.05" />
 			</div>
 			<div class="ctrl">
-				<label>Bloom <span class="val" id="v-bloom">0.70</span></label>
-				<input type="range" id="s-bloom" min="0" max="3" step="0.05" value="0.7" />
+				<label>Bloom <span class="val" id="v-bloom">0.00</span></label>
+				<input type="range" id="s-bloom" min="0" max="3" step="0.05" value="0" />
 			</div>
 			<div class="ctrl">
-				<label>Depth of field <span class="val" id="v-dof">0.40</span></label>
-				<input type="range" id="s-dof" min="0" max="2" step="0.05" value="0.4" />
+				<label>Chromatic <span class="val" id="v-chroma">0.025</span></label>
+				<input type="range" id="s-chroma" min="0" max="0.2" step="0.005" value="0.025" />
 			</div>
 			<div class="ctrl">
 				<label>Grain <span class="val" id="v-grain">0.02</span></label>
@@ -381,7 +397,6 @@
 	import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 	import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 	import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
-	import { BokehPass } from "three/addons/postprocessing/BokehPass.js";
 	import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
 	import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 
@@ -400,22 +415,26 @@
 		// --- live-tunable config (driven by the control panel) ------------
 		const config = {
 			particleCount: 2000,
-			particleSize: 10,       // base point size in px
-			glowSpeed: 0.3,         // flake flutter + glint speed multiplier
+			particleSize: 20,       // base point size in px
+			glowSpeed: 0.25,        // flake flutter + glint speed multiplier
 			modelScale: 1.5,        // target size of the model
+			modelX: 0,              // glass logo position offset (x)
+			modelY: 0.3,            // glass logo position offset (y)
+			modelZ: 0,              // glass logo position offset (z)
 			depthScale: 1,          // Z-depth multiplier: 1.0 = true scene.glb depth, <1 = slimmer slabs (art override)
 			rotationTurns: -2,      // turns over a full scroll (negative reverses)
 			groundX: 1,             // ground position offset (x)
-			groundY: 0.2,           // ground position offset (y)
+			groundY: 1.1,           // ground position offset (y)
 			groundZ: -9,            // ground position offset (z)
 			groundScale: 1,         // ground size multiplier (on top of auto-fit)
 			groundTurns: -2,        // ground turns over a full scroll
-			skyTurns: -2.5,         // sky/environment turns over a full scroll (the glow sweeps through view)
-			skyDrift: 0.02,         // constant sky drift (radians/sec) — keeps moving even when not scrolling
+			skyTurns: -2,           // sky/environment turns over a full scroll (the glow sweeps through view)
+			skyAngle: 0.8726646259971648, // static sky/environment rotation offset (radians) — manual orientation
+			skyDrift: 0,            // constant sky drift (radians/sec) — 0 = no automatic sky motion
 			haze: 0.05,             // warm low haze opacity (0 = off)
 			cameraDist: 10,         // camera distance — lower = bigger scene in frame
-			bloom: 0.7,             // bloom strength (glow off bright areas)
-			dof: 0.4,               // depth-of-field amount (0 = off)
+			bloom: 0,               // bloom strength (glow off bright areas)
+			chroma: 0.025,          // chromatic aberration strength (RGB split toward edges; 0 = off)
 			grain: 0.02             // film grain + dither amount (also kills banding)
 		};
 		let flakeTime = 0;          // accumulated time scaled by glowSpeed
@@ -655,6 +674,13 @@
 			// like the reference (depthScale = 1.0 keeps the true scene.glb depth).
 			const s = config.modelScale / coreMaxDim;
 			core.scale.set(s, s, s * config.depthScale);
+		}
+
+		// Position the glass logo. Safe to set directly: frameCore() re-centers the
+		// child meshes (not the core group), and the render loop only drives
+		// core.rotation — so core.position persists.
+		function applyModelPos() {
+			core.position.set(config.modelX, config.modelY, config.modelZ);
 		}
 
 		// --- glass-through-glass: split fused mesh + multi-pass transmission --
@@ -903,7 +929,7 @@
 			);
 		}
 
-		loadGround("model.glb", () => console.warn("[ground] couldn't load model.glb (serve over http)."), "tex_u0_v0_normal.jpg");
+		loadGround("model-lite.glb", () => console.warn("[ground] couldn't load model-lite.glb (serve over http)."), "tex_u0_v0_normal_2k.jpg");
 
 		// Replace the GROUND (bottom) model live from a user-picked file.
 		function loadGroundFile(file) {
@@ -921,7 +947,7 @@
 		}
 
 		// --- post-processing pipeline ------------------------------------
-		// RenderPass → Bloom → DoF(Bokeh) → Grade(god-rays + vignette + chromatic
+		// RenderPass → Bloom → Grade(god-rays + vignette + chromatic
 		// aberration + film grain/dither) → OutputPass (tone map + sRGB).
 		const composer = new EffectComposer(renderer);
 		composer.addPass(new RenderPass(scene, camera));
@@ -932,13 +958,6 @@
 		);
 		composer.addPass(bloomPass);
 
-		// Depth of field is a whole extra scene (depth) pass — desktop only.
-		let bokehPass = null;
-		if (!isMobile) {
-			bokehPass = new BokehPass(scene, camera, { focus: 9.0, aperture: 0.0006, maxblur: 0.01 });
-			composer.addPass(bokehPass);
-		}
-
 		// Grade pass: god-rays (radial light scattering toward the sun), vignette,
 		// chromatic aberration, and animated grain + dither (also breaks banding).
 		const gradePass = new ShaderPass({
@@ -946,12 +965,13 @@
 				tDiffuse: { value: null },
 				uTime: { value: 0 },
 				uGrain: { value: config.grain },
+				uChroma: { value: config.chroma },
 				uAspect: { value: window.innerWidth / window.innerHeight }
 			},
 			vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
 			fragmentShader: `
 				uniform sampler2D tDiffuse;
-				uniform float uTime, uGrain, uAspect;
+				uniform float uTime, uGrain, uChroma, uAspect;
 				varying vec2 vUv;
 				float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 				void main(){
@@ -959,7 +979,7 @@
 					// chromatic aberration — grows toward the edges
 					vec2 d = uv - 0.5;
 					float r2 = dot(d, d);
-					vec2 off = d * r2 * 0.06;
+					vec2 off = d * r2 * uChroma;
 					vec3 col;
 					col.r = texture2D(tDiffuse, uv + off).r;
 					col.g = texture2D(tDiffuse, uv).g;
@@ -1011,7 +1031,7 @@
 			//  - a touch of OPPOSITE pointer influence vs the logo → parallax depth
 			// environmentRotation tracks it so reflections stay in sync.
 			scene.backgroundRotation.y =
-				easedProgress * Math.PI * config.skyTurns + t * config.skyDrift - pointer.x * 0.15;
+				config.skyAngle + easedProgress * Math.PI * config.skyTurns + t * config.skyDrift - pointer.x * 0.15;
 			scene.environmentRotation.y = scene.backgroundRotation.y;
 
 			// particles slowly counter-rotate and react to scroll
@@ -1034,12 +1054,9 @@
 
 			// post uniforms
 			gradePass.uniforms.uGrain.value = config.grain;
+			gradePass.uniforms.uChroma.value = config.chroma;
 			gradePass.uniforms.uTime.value = t;
 			bloomPass.strength = config.bloom;
-			if (bokehPass) {
-				bokehPass.uniforms["focus"].value = camera.position.length();   // keep the logo in focus
-				bokehPass.uniforms["maxblur"].value = config.dof * 0.015;
-			}
 
 			// Multi-pass transmission: for each slab, hide ONLY that slab (swap
 			// to DiscardMaterial) and render the rest of the scene — including the
@@ -1149,6 +1166,10 @@
 			applyModelScale();
 		}, (v) => v.toFixed(1));
 
+		bindSlider("s-mx", "v-mx", (v) => { config.modelX = v; applyModelPos(); }, (v) => v.toFixed(1));
+		bindSlider("s-my", "v-my", (v) => { config.modelY = v; applyModelPos(); }, (v) => v.toFixed(1));
+		bindSlider("s-mz", "v-mz", (v) => { config.modelZ = v; applyModelPos(); }, (v) => v.toFixed(1));
+
 		bindSlider("s-cam", "v-cam", (v) => { config.cameraDist = v; }, (v) => v.toFixed(1));
 
 		bindSlider("s-depth", "v-depth", (v) => {
@@ -1166,10 +1187,11 @@
 		bindSlider("s-gscale", "v-gscale", (v) => { config.groundScale = v; applyGround(); }, (v) => v.toFixed(2));
 		bindSlider("s-gturns", "v-gturns", (v) => { config.groundTurns = v; }, (v) => v.toFixed(1));
 		bindSlider("s-sky", "v-sky", (v) => { config.skyTurns = v; }, (v) => v.toFixed(1));
+		bindSlider("s-skyangle", "v-skyangle", (v) => { config.skyAngle = v * Math.PI / 180; }, (v) => Math.round(v) + "°");
 		bindSlider("s-skydrift", "v-skydrift", (v) => { config.skyDrift = v; }, (v) => v.toFixed(2));
 		bindSlider("s-haze", "v-haze", (v) => { config.haze = v; hazeMat.opacity = v; }, (v) => v.toFixed(2));
 		bindSlider("s-bloom", "v-bloom", (v) => { config.bloom = v; }, (v) => v.toFixed(2));
-		bindSlider("s-dof", "v-dof", (v) => { config.dof = v; }, (v) => v.toFixed(2));
+		bindSlider("s-chroma", "v-chroma", (v) => { config.chroma = v; }, (v) => v.toFixed(3));
 		bindSlider("s-grain", "v-grain", (v) => { config.grain = v; }, (v) => v.toFixed(2));
 
 		readScroll();

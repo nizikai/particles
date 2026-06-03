@@ -27,8 +27,8 @@ export function createTerrain() {
   const pos = geo.attributes.position;
   const colors = new Float32Array(pos.count * 3);
 
-  const rock = new THREE.Color(0x14171c);  // dark cold rock
-  const snow = new THREE.Color(0x9aa6b2);  // desaturated bright basin floor
+  const rock = new THREE.Color(0x3c434e);  // cold grey rock (reads under key light)
+  const snow = new THREE.Color(0xb4c0cc);  // desaturated bright basin floor
 
   // ---- Displacement pass --------------------------------------------------
   for (let i = 0; i < pos.count; i++) {

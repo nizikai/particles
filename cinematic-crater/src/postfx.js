@@ -17,7 +17,6 @@ import {
   VignetteEffect,
   NoiseEffect,
   Effect,
-  EffectAttribute,
   BlendFunction,
   KernelSize,
 } from 'postprocessing';
@@ -95,7 +94,7 @@ export function createPostFX(renderer, scene, camera, sunMesh) {
     modulationOffset: 0.3,
   });
 
-  const vignette = new VignetteEffect({ offset: 0.28, darkness: 0.85 });
+  const vignette = new VignetteEffect({ offset: 0.4, darkness: 0.55 });
 
   const noise = new NoiseEffect({ blendFunction: BlendFunction.OVERLAY });
   noise.blendMode.opacity.value = 0.16; // film grain strength
@@ -104,13 +103,22 @@ export function createPostFX(renderer, scene, camera, sunMesh) {
   // neighboring texels, so pmndrs forbids merging them into one pass — they get
   // their own EffectPass. Simple per-pixel effects (grade, vignette, grain) are
   // merged into a single pass for efficiency.
-  if (location.search.includes('cleardepth')) {
-    godRays.setAttributes(godRays.getAttributes() & ~EffectAttribute.DEPTH);
-  }
   composer.addPass(new EffectPass(camera, godRays));
   composer.addPass(new EffectPass(camera, bloom));
   composer.addPass(new EffectPass(camera, colorGrade, vignette, noise));
   composer.addPass(new EffectPass(camera, chromaticAberration));
 
-  return { composer, godRays };
+  // GodRays reads the scene depth texture. The composer attaches that SAME
+  // texture to the ping-pong *output* (write) buffer too, so a frame's blit
+  // reads and writes the same depth-stencil image — which ANGLE rejects with a
+  // per-frame console warning. The output buffer never needs scene depth (god
+  // rays keep their own reference), so we strip depth from it. Re-applied on
+  // resize because EffectComposer.setSize touches the buffers.
+  const dropOutputDepth = () => {
+    const out = composer.outputBuffer;
+    if (out) { out.depthTexture = null; out.depthBuffer = false; }
+  };
+  dropOutputDepth();
+
+  return { composer, godRays, dropOutputDepth };
 }
