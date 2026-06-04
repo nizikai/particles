@@ -5,18 +5,12 @@
 	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 	<title>Scroll Rotate · Particle Scene</title>
 	<style>
-		/* Clash Grotesk — drop the font files into a ./fonts/ folder next to this
-		   file. Variable woff2 is preferred (one file, all weights); the static
-		   .ttf is a fallback so it still works if you only have that. Download
-		   from fontshare.com/fonts/clash-grotesk. */
-		@font-face {
-			font-family: "Clash Grotesk";
-			src: url("fonts/ClashGrotesk-Variable.woff2") format("woff2"),
-			     url("fonts/ClashGrotesk-Variable.ttf") format("truetype");
-			font-weight: 200 700;
-			font-style: normal;
-			font-display: swap;
-		}
+		@font-face { font-family: "Clash Grotesk"; src: url("fonts/ClashGrotesk-Extralight.otf") format("opentype"); font-weight: 200; font-style: normal; font-display: swap; }
+		@font-face { font-family: "Clash Grotesk"; src: url("fonts/ClashGrotesk-Light.otf")      format("opentype"); font-weight: 300; font-style: normal; font-display: swap; }
+		@font-face { font-family: "Clash Grotesk"; src: url("fonts/ClashGrotesk-Regular.otf")    format("opentype"); font-weight: 400; font-style: normal; font-display: swap; }
+		@font-face { font-family: "Clash Grotesk"; src: url("fonts/ClashGrotesk-Medium.otf")     format("opentype"); font-weight: 500; font-style: normal; font-display: swap; }
+		@font-face { font-family: "Clash Grotesk"; src: url("fonts/ClashGrotesk-Semibold.otf")   format("opentype"); font-weight: 600; font-style: normal; font-display: swap; }
+		@font-face { font-family: "Clash Grotesk"; src: url("fonts/ClashGrotesk-Bold.otf")       format("opentype"); font-weight: 700; font-style: normal; font-display: swap; }
 
 		* { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -31,7 +25,7 @@
 			width: 100%;
 			background: linear-gradient(180deg, var(--bg-top) 0%, #050302 45%, var(--bg-bottom) 100%);
 			color: var(--ink);
-			font-family: "Avenir Next", "Trebuchet MS", system-ui, sans-serif;
+			font-family: "Clash Grotesk", "Avenir Next", system-ui, sans-serif;
 		}
 
 		/* Tall scroll track — this is what we scrub the rotation against. */
@@ -244,6 +238,13 @@
 		.ctrl input[type="file"]::file-selector-button:hover { background: rgb(246 179 44 / 0.22); }
 		.upload-ctrl { padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px solid rgb(246 179 44 / 0.18); }
 		.upload-ctrl .hint { color: rgb(245 234 211 / 0.4); font-size: 10px; margin-top: 6px; }
+		.ctrl select {
+			width: 100%; margin-top: 4px; padding: 7px 9px;
+			border: 1px solid rgb(246 179 44 / 0.4); border-radius: 7px;
+			background: rgb(10 6 2 / 0.85); color: #f6b32c;
+			font: 11px/1.2 inherit; cursor: pointer;
+		}
+		.ctrl select option { background: #100a04; color: #f5ead3; }
 
 		.copy-btn {
 			width: 100%;
@@ -303,21 +304,29 @@
 		<button class="panel-toggle" id="panelToggle">Controls</button>
 		<div class="panel-body">
 			<div class="ctrl upload-ctrl">
-				<label>Ground model</label>
+				<label>Texture</label>
+				<select id="s-texture">
+					<option value="scene-jpeg-etc1s.glb">JPEG · seam-fixed (ETC1S, smallest)</option>
+					<option value="scene-jpeg-uastc.glb">JPEG · seam-fixed (UASTC)</option>
+					<option value="scene-jpeg-raw.glb">JPEG · seam-fixed (RAW, pristine)</option>
+					<option value="scene-flatcolor.glb">TEST · flat color (no texture)</option>
+				</select>
+				<div class="hint">Switch the ground texture to compare looks.</div>
+				<label style="margin-top:10px">Ground model</label>
 				<input type="file" id="upload" accept=".glb,.gltf" />
-				<div class="hint">Pick or drop a .glb/.gltf to replace the ground (bottom). The glass logo stays.</div>
+				<div class="hint">Or pick/drop a .glb/.gltf to replace the ground. The glass logo stays.</div>
 			</div>
 			<div class="ctrl">
 				<label>Particles <span class="val" id="v-count">2000</span></label>
 				<input type="range" id="s-count" min="300" max="9000" step="100" value="2000" />
 			</div>
 			<div class="ctrl">
-				<label>Glow speed <span class="val" id="v-glow">0.25×</span></label>
-				<input type="range" id="s-glow" min="0" max="4" step="0.05" value="0.25" />
+				<label>Glow speed <span class="val" id="v-glow">0.30×</span></label>
+				<input type="range" id="s-glow" min="0" max="4" step="0.05" value="0.3" />
 			</div>
 			<div class="ctrl">
-				<label>Flake size <span class="val" id="v-size">20</span></label>
-				<input type="range" id="s-size" min="8" max="90" step="1" value="20" />
+				<label>Flake size <span class="val" id="v-size">15</span></label>
+				<input type="range" id="s-size" min="8" max="90" step="1" value="15" />
 			</div>
 			<div class="ctrl">
 				<label>Model size <span class="val" id="v-scale">1.5</span></label>
@@ -348,20 +357,20 @@
 				<input type="range" id="s-rot" min="-12" max="12" step="0.5" value="-2" />
 			</div>
 			<div class="ctrl">
-				<label>Ground X <span class="val" id="v-gx">1.0</span></label>
-				<input type="range" id="s-gx" min="-15" max="15" step="0.1" value="1" />
+				<label>Ground X <span class="val" id="v-gx">0.0</span></label>
+				<input type="range" id="s-gx" min="-15" max="15" step="0.1" value="0" />
 			</div>
 			<div class="ctrl">
-				<label>Ground Y <span class="val" id="v-gy">1.1</span></label>
-				<input type="range" id="s-gy" min="-15" max="15" step="0.1" value="1.1" />
+				<label>Ground Y <span class="val" id="v-gy">6.0</span></label>
+				<input type="range" id="s-gy" min="-15" max="15" step="0.1" value="6" />
 			</div>
 			<div class="ctrl">
-				<label>Ground Z <span class="val" id="v-gz">-9.0</span></label>
-				<input type="range" id="s-gz" min="-15" max="15" step="0.1" value="-9" />
+				<label>Ground Z <span class="val" id="v-gz">-3.0</span></label>
+				<input type="range" id="s-gz" min="-15" max="15" step="0.1" value="-3" />
 			</div>
 			<div class="ctrl">
-				<label>Ground size <span class="val" id="v-gscale">1.00</span></label>
-				<input type="range" id="s-gscale" min="0.2" max="3" step="0.05" value="1.0" />
+				<label>Ground size <span class="val" id="v-gscale">1.20</span></label>
+				<input type="range" id="s-gscale" min="0.2" max="3" step="0.05" value="1.2" />
 			</div>
 			<div class="ctrl">
 				<label>Ground spin <span class="val" id="v-gturns">-2.0</span></label>
@@ -372,8 +381,8 @@
 				<input type="range" id="s-sky" min="-4" max="4" step="0.1" value="-2" />
 			</div>
 			<div class="ctrl">
-				<label>Sky angle <span class="val" id="v-skyangle">50°</span></label>
-				<input type="range" id="s-skyangle" min="0" max="360" step="1" value="50" />
+				<label>Sky angle <span class="val" id="v-skyangle">70°</span></label>
+				<input type="range" id="s-skyangle" min="0" max="360" step="1" value="70" />
 			</div>
 			<div class="ctrl">
 				<label>Sky drift <span class="val" id="v-skydrift">0.00</span></label>
@@ -384,8 +393,8 @@
 				<input type="range" id="s-haze" min="0" max="1" step="0.05" value="0.05" />
 			</div>
 			<div class="ctrl">
-				<label>Bloom <span class="val" id="v-bloom">0.00</span></label>
-				<input type="range" id="s-bloom" min="0" max="3" step="0.05" value="0" />
+				<label>Bloom <span class="val" id="v-bloom">0.15</span></label>
+				<input type="range" id="s-bloom" min="0" max="3" step="0.05" value="0.15" />
 			</div>
 			<div class="ctrl">
 				<label>Chromatic <span class="val" id="v-chroma">0.012</span></label>
@@ -439,25 +448,25 @@
 		// --- live-tunable config (driven by the control panel) ------------
 		const config = {
 			particleCount: 2000,
-			particleSize: 20,       // base point size in px
-			glowSpeed: 0.25,        // flake flutter + glint speed multiplier
+			particleSize: 15,       // base point size in px
+			glowSpeed: 0.3,         // flake flutter + glint speed multiplier
 			modelScale: 1.5,        // target size of the model
 			modelX: 0,              // glass logo position offset (x)
 			modelY: 0.3,            // glass logo position offset (y)
 			modelZ: 0,              // glass logo position offset (z)
 			depthScale: 1,          // Z-depth multiplier: 1.0 = true scene.glb depth, <1 = slimmer slabs (art override)
 			rotationTurns: -2,      // turns over a full scroll (negative reverses)
-			groundX: 1,             // ground position offset (x)
-			groundY: 1.1,           // ground position offset (y)
-			groundZ: -9,            // ground position offset (z)
-			groundScale: 1,         // ground size multiplier (on top of auto-fit)
+			groundX: 0,             // ground position offset (x)
+			groundY: 6,             // ground position offset (y)
+			groundZ: -3,            // ground position offset (z)
+			groundScale: 1.2,       // ground size multiplier (on top of auto-fit)
 			groundTurns: -2,        // ground turns over a full scroll
 			skyTurns: -2,           // sky/environment turns over a full scroll (the glow sweeps through view)
-			skyAngle: 0.8726646259971648, // static sky/environment rotation offset (radians) — manual orientation
+			skyAngle: 1.2217304763960306, // static sky/environment rotation offset (radians) — manual orientation
 			skyDrift: 0,            // constant sky drift (radians/sec) — 0 = no automatic sky motion
 			haze: 0.05,             // warm low haze opacity (0 = off)
 			cameraDist: 10,         // camera distance — lower = bigger scene in frame
-			bloom: 0,               // bloom strength (glow off bright areas)
+			bloom: 0.15,            // bloom strength (glow off bright areas)
 			chroma: 0.012,          // chromatic aberration strength (RGB split toward edges; 0 = off)
 			grain: 0.01             // film grain + dither amount (also kills banding)
 		};
@@ -845,12 +854,12 @@
 		}
 
 		makeGLTFLoader().load(
-			"scene.glb",
+			"logo.glb",
 			(gltf) => buildGlassFrom(gltf.scene),
 			undefined,
 			() => {
 				noticeEl.classList.add("show");
-				noticeEl.innerHTML = "Couldn't load <code>scene.glb</code>. " +
+				noticeEl.innerHTML = "Couldn't load <code>logo.glb</code>. " +
 					"Open this page from a local server (e.g. <code>python3 -m http.server</code>) " +
 					"so the model can load. Showing a placeholder for now.";
 				addFallback();
@@ -933,16 +942,16 @@
 						const realTex = m.map && m.map.image && m.map.image.width > 2;
 						if (realTex) {
 							m.map.anisotropy = maxAniso;
+							// Sample the base level only (no mipmaps). The texture is a UV
+							// atlas with tightly-packed islands; mip levels blend across the
+							// island boundaries, drawing faint dashed lines at the wall/floor/
+							// column seams. Disabling mips removes that bleed entirely.
+							m.map.minFilter = THREE.LinearFilter;
+							m.map.generateMipmaps = false;
+							if (!m.map.isCompressedTexture) m.map.colorSpace = THREE.SRGBColorSpace;
+							m.map.wrapS = m.map.wrapT = THREE.RepeatWrapping;
+							m.map.repeat.set(1.0005, 1.0005);
 							m.map.needsUpdate = true;
-							// KTX2/Basis textures are compressed and ship their own mipmaps —
-							// don't try to (re)generate them or override colorSpace (GLTFLoader
-							// already set sRGB on baseColor, linear on normal). Plain textures
-							// still get trilinear mipmaps for crispness at grazing angles.
-							if (!m.map.isCompressedTexture) {
-								m.map.colorSpace = THREE.SRGBColorSpace;
-								m.map.generateMipmaps = true;
-								m.map.minFilter = THREE.LinearMipmapLinearFilter;
-							}
 							if (m.normalMap) {
 								m.normalMap.anisotropy = maxAniso;
 								m.normalScale.set(0.55, 0.55);   // calm high-freq noise on the decimated mesh
@@ -1007,11 +1016,15 @@
 			);
 		}
 
-		// Both bake in the 4K albedo + 2K normal as KTX2 (Basis ETC1S) and Meshopt
-		// geometry — no external maps. Desktop gets the full 507k-tri scan (crisp
-		// up close); mobile gets the 76k-tri lite mesh for performance.
-		const groundModel = isMobile ? "model-opt.glb" : "model-full.glb";
-		loadGround(groundModel, () => console.warn(`[ground] couldn't load ${groundModel} (serve over http).`));
+		// Ground model: picked from the Texture dropdown (KTX2 + Meshopt variants
+		// baked from scene.glb). Default is whatever option is selected first.
+		const textureSelect = document.getElementById("s-texture");
+		function loadGroundTexture() {
+			const url = textureSelect.value;
+			loadGround(url, () => console.warn(`[ground] couldn't load ${url} (serve over http).`));
+		}
+		textureSelect.addEventListener("change", loadGroundTexture);
+		loadGroundTexture();
 
 		// Replace the GROUND (bottom) model live from a user-picked file.
 		function loadGroundFile(file) {
@@ -1103,9 +1116,10 @@
 			pointer.y += (pointer.ty - pointer.y) * 0.05;
 
 			if (modelReady) {
-				// scroll scrubs rotationTurns full turns; pointer adds parallax tilt
+				// scroll spins the logo purely around the vertical (Y) axis;
+				// pointer adds only a gentle parallax tilt (no scroll tumble).
 				core.rotation.y = easedProgress * Math.PI * config.rotationTurns + pointer.x * 0.4;
-				core.rotation.x = Math.sin(easedProgress * Math.PI * 2) * 0.25 - pointer.y * 0.25;
+				core.rotation.x = -pointer.y * 0.25;
 			}
 
 			// ground spins in place, driven by scroll (like the logo)

@@ -1,0 +1,3 @@
+[      48ms] [ERROR] Failed to load resource: the server responded with a status of 404 (File not found) @ http://localhost:8771/fonts/ClashGrotesk-Variable.woff2:0
+[      49ms] [ERROR] Failed to load resource: the server responded with a status of 404 (File not found) @ http://localhost:8771/fonts/ClashGrotesk-Variable.ttf:0
+[     418ms] [ERROR] Failed to load resource: the server responded with a status of 404 (File not found) @ http://localhost:8771/favicon.ico:0
