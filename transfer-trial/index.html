@@ -5,6 +5,19 @@
 	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 	<title>Scroll Rotate · Particle Scene</title>
 	<style>
+		/* Clash Grotesk — drop the font files into a ./fonts/ folder next to this
+		   file. Variable woff2 is preferred (one file, all weights); the static
+		   .ttf is a fallback so it still works if you only have that. Download
+		   from fontshare.com/fonts/clash-grotesk. */
+		@font-face {
+			font-family: "Clash Grotesk";
+			src: url("fonts/ClashGrotesk-Variable.woff2") format("woff2"),
+			     url("fonts/ClashGrotesk-Variable.ttf") format("truetype");
+			font-weight: 200 700;
+			font-style: normal;
+			font-display: swap;
+		}
+
 		* { box-sizing: border-box; margin: 0; padding: 0; }
 
 		:root {
@@ -39,6 +52,25 @@
 			position: fixed;
 			inset: 0;
 			z-index: 2;
+			pointer-events: none;
+		}
+
+		/* Top-left headline (the "WE BUILD WHAT THE INTERNET HASN'T SEEN BEFORE."
+		   block from the reference). Fixed so it stays pinned over the canvas. */
+		.headline {
+			position: fixed;
+			top: 21vh;
+			left: clamp(20px, 8.5vw, 170px);
+			z-index: 2;
+			margin: 0;
+			max-width: 12em;
+			font-family: "Clash Grotesk", "Arial Narrow", system-ui, sans-serif;
+			font-weight: 500;
+			font-size: clamp(28px, 3vw, 50px);
+			line-height: 1.06;
+			letter-spacing: -0.01em;
+			text-transform: uppercase;
+			color: #ffffff;
 			pointer-events: none;
 		}
 
@@ -108,16 +140,6 @@
 		@keyframes nudge {
 			0%, 100% { opacity: 0.2; transform: translateY(-6px); }
 			50% { opacity: 1; transform: translateY(2px); }
-		}
-
-		.progress {
-			position: fixed;
-			left: 0; right: 0; top: 0;
-			height: 2px;
-			z-index: 4;
-			transform-origin: 0 50%;
-			transform: scaleX(0);
-			background: linear-gradient(90deg, var(--accent), #fff);
 		}
 
 		.notice {
@@ -272,7 +294,8 @@
 <body>
 	<canvas id="webgl"></canvas>
 
-	<div class="progress" id="progress"></div>
+	<h1 class="headline">We build what the internet hasn't seen before.</h1>
+
 	<div id="fps">— fps</div>
 	<div class="notice" id="notice"></div>
 
@@ -365,12 +388,12 @@
 				<input type="range" id="s-bloom" min="0" max="3" step="0.05" value="0" />
 			</div>
 			<div class="ctrl">
-				<label>Chromatic <span class="val" id="v-chroma">0.025</span></label>
-				<input type="range" id="s-chroma" min="0" max="0.2" step="0.005" value="0.025" />
+				<label>Chromatic <span class="val" id="v-chroma">0.012</span></label>
+				<input type="range" id="s-chroma" min="0" max="0.2" step="0.005" value="0.012" />
 			</div>
 			<div class="ctrl">
-				<label>Grain <span class="val" id="v-grain">0.02</span></label>
-				<input type="range" id="s-grain" min="0" max="0.4" step="0.01" value="0.02" />
+				<label>Grain <span class="val" id="v-grain">0.01</span></label>
+				<input type="range" id="s-grain" min="0" max="0.4" step="0.01" value="0.01" />
 			</div>
 			<button class="copy-btn" id="copyBtn">Copy settings</button>
 		</div>
@@ -393,6 +416,8 @@
 	<script type="module">
 	import * as THREE from "three";
 	import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+	import { KTX2Loader } from "three/addons/loaders/KTX2Loader.js";
+	import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 	import { MeshTransmissionMaterial, DiscardMaterial } from "./MeshTransmissionMaterial.js";
 	import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 	import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
@@ -403,7 +428,6 @@
 	(() => {
 		const canvas = document.getElementById("webgl");
 		const noticeEl = document.getElementById("notice");
-		const progressEl = document.getElementById("progress");
 		const fpsEl = document.getElementById("fps");
 		let fpsFrames = 0, fpsLast = 0;   // rolling FPS counter
 
@@ -434,8 +458,8 @@
 			haze: 0.05,             // warm low haze opacity (0 = off)
 			cameraDist: 10,         // camera distance — lower = bigger scene in frame
 			bloom: 0,               // bloom strength (glow off bright areas)
-			chroma: 0.025,          // chromatic aberration strength (RGB split toward edges; 0 = off)
-			grain: 0.02             // film grain + dither amount (also kills banding)
+			chroma: 0.012,          // chromatic aberration strength (RGB split toward edges; 0 = off)
+			grain: 0.01             // film grain + dither amount (also kills banding)
 		};
 		let flakeTime = 0;          // accumulated time scaled by glowSpeed
 
@@ -462,6 +486,15 @@
 		renderer.outputColorSpace = THREE.SRGBColorSpace;
 		renderer.toneMapping = THREE.ACESFilmicToneMapping;
 		renderer.toneMappingExposure = 1.05;
+
+		// KTX2 (Basis) + Meshopt support so model-opt.glb loads its GPU-compressed
+		// textures and compressed geometry — the Sketchfab-style "sharp but small"
+		// pipeline. Every GLTFLoader in this file goes through makeGLTFLoader().
+		const ktx2Loader = new KTX2Loader()
+			.setTranscoderPath("https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/libs/basis/")
+			.detectSupport(renderer);
+		const makeGLTFLoader = () =>
+			new GLTFLoader().setKTX2Loader(ktx2Loader).setMeshoptDecoder(MeshoptDecoder);
 
 		const scene = new THREE.Scene();
 
@@ -554,6 +587,18 @@
 		// entirely by scene.environment (the dark + single-warm-glow PMREM env),
 		// which gives the clean crystal look — dark surroundings, one hot glow,
 		// razor reflections. Add lights here only if you want to break from it.
+
+		// The rocky terrain, though, needs real directional light or it reads as
+		// a flat, evenly-glowing texture with no form. One warm KEY light rakes
+		// across it from the glow's direction (lit ridges + shadowed faces); a dim
+		// FILL keeps the shadow side from going pure black. Modest intensities so
+		// the env still dominates the crystal glass.
+		const keyLight = new THREE.DirectionalLight(0xffb066, 2.6);
+		keyLight.position.set(7, 4, 2);    // upper-right, matching the warm glow
+		scene.add(keyLight);
+		const fillLight = new THREE.DirectionalLight(0x6a3a1a, 0.5);
+		fillLight.position.set(-6, 1.5, -3);
+		scene.add(fillLight);
 
 		// --- the rotating core group ------------------------------------
 		const core = new THREE.Group();
@@ -799,7 +844,7 @@
 			modelReady = true;
 		}
 
-		new GLTFLoader().load(
+		makeGLTFLoader().load(
 			"scene.glb",
 			(gltf) => buildGlassFrom(gltf.scene),
 			undefined,
@@ -851,13 +896,13 @@
 			groundReady = false;
 		}
 
-		// Load a ground model from a URL (the default model.glb or an upload):
+		// Load a ground model from a URL (the default model-lite.glb or an upload):
 		// auto-fit, center on the pivot, and give untextured scans a dark rock
-		// look. `normalUrl` (optional) is a separate normal map applied on top of
-		// the diffuse — model.glb's normal map isn't referenced inside the GLB.
+		// look. `normalUrl` and `diffuseUrl` (both optional) are separate maps
+		// applied on top — model-lite.glb references neither inside the GLB.
 		// Replaces whatever ground is currently shown.
-		function loadGround(url, onError, normalUrl) {
-			new GLTFLoader().load(
+		function loadGround(url, onError, normalUrl, diffuseUrl) {
+			makeGLTFLoader().load(
 				url,
 				(gltf) => {
 					clearGround();
@@ -878,41 +923,74 @@
 					// meshes (e.g. model.glb's missing diffuse) get a dark rough
 					// rock look so they aren't flat white.
 					const maxAniso = renderer.capabilities.getMaxAnisotropy();
-					const texturedMats = [];   // materials that got a real diffuse — candidates for the normal map
+					const allMats = [];        // every ground material (gets the normal map)
+					const needsDiffuse = [];   // materials with no embedded color map (get the external diffuse)
 					ground.traverse((o) => {
 						if (!o.isMesh || !o.material) return;
 						const m = o.material;
+						allMats.push(m);
 						// a real texture (not the 1×1 dummy from a missing file)
 						const realTex = m.map && m.map.image && m.map.image.width > 2;
 						if (realTex) {
 							m.map.anisotropy = maxAniso;
-							m.map.colorSpace = THREE.SRGBColorSpace;
-							m.map.generateMipmaps = true;
-							m.map.minFilter = THREE.LinearMipmapLinearFilter;
 							m.map.needsUpdate = true;
-							texturedMats.push(m);
+							// KTX2/Basis textures are compressed and ship their own mipmaps —
+							// don't try to (re)generate them or override colorSpace (GLTFLoader
+							// already set sRGB on baseColor, linear on normal). Plain textures
+							// still get trilinear mipmaps for crispness at grazing angles.
+							if (!m.map.isCompressedTexture) {
+								m.map.colorSpace = THREE.SRGBColorSpace;
+								m.map.generateMipmaps = true;
+								m.map.minFilter = THREE.LinearMipmapLinearFilter;
+							}
+							if (m.normalMap) {
+								m.normalMap.anisotropy = maxAniso;
+								m.normalScale.set(0.55, 0.55);   // calm high-freq noise on the decimated mesh
+								m.normalMap.needsUpdate = true;
+							}
 						} else {
+							// no embedded diffuse — dark rock fallback until the external
+							// diffuse (if supplied) loads in below.
 							m.map = null;
 							m.color = new THREE.Color(0x4a3a2c);
-							m.roughness = 1.0;
+							m.roughness = 0.92;
 							m.metalness = 0.0;
-							m.envMapIntensity = 0.6;
+							m.envMapIntensity = 0.35;   // less env so the bright glow doesn't wash the rock out; the key light gives the form
+							needsDiffuse.push(m);
 						}
 					});
 
-					// Apply the separate normal map (not embedded in the GLB) to the
-					// textured rock. Normal maps are linear data — NOT sRGB — and
-					// reuse the diffuse's UVs (TEXCOORD_0).
-					if (normalUrl && texturedMats.length) {
+					// Apply the separate diffuse (tex_u0_v0_diffuse.jpg) — model-lite.glb
+					// ships without its color map baked in, so the scan reads as flat
+					// rock otherwise. sRGB color data; shares the diffuse's UVs.
+					if (diffuseUrl && needsDiffuse.length) {
+						new THREE.TextureLoader().load(diffuseUrl, (tex) => {
+							tex.colorSpace = THREE.SRGBColorSpace;
+							tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+							tex.anisotropy = maxAniso;
+							tex.generateMipmaps = true;
+							tex.minFilter = THREE.LinearMipmapLinearFilter;
+							needsDiffuse.forEach((m) => {
+								m.map = tex;
+								m.color = new THREE.Color(0xffffff);   // let the texture's true color show
+								m.needsUpdate = true;
+							});
+						});
+					}
+
+					// Apply the separate normal map (not embedded in the GLB) to all the
+					// rock. Normal maps are linear data — NOT sRGB — and reuse the
+					// diffuse's UVs (TEXCOORD_0).
+					if (normalUrl && allMats.length) {
 						new THREE.TextureLoader().load(normalUrl, (nrm) => {
 							nrm.colorSpace = THREE.NoColorSpace;
 							nrm.wrapS = nrm.wrapT = THREE.ClampToEdgeWrapping;
 							nrm.anisotropy = maxAniso;
 							nrm.generateMipmaps = true;
 							nrm.minFilter = THREE.LinearMipmapLinearFilter;
-							texturedMats.forEach((m) => {
+							allMats.forEach((m) => {
 								m.normalMap = nrm;
-								m.normalScale.set(1, 1);
+								m.normalScale.set(0.55, 0.55);   // calm the high-freq noise on the decimated mesh
 								m.needsUpdate = true;
 							});
 						});
@@ -929,7 +1007,11 @@
 			);
 		}
 
-		loadGround("model-lite.glb", () => console.warn("[ground] couldn't load model-lite.glb (serve over http)."), "tex_u0_v0_normal_2k.jpg");
+		// Both bake in the 4K albedo + 2K normal as KTX2 (Basis ETC1S) and Meshopt
+		// geometry — no external maps. Desktop gets the full 507k-tri scan (crisp
+		// up close); mobile gets the 76k-tri lite mesh for performance.
+		const groundModel = isMobile ? "model-opt.glb" : "model-full.glb";
+		loadGround(groundModel, () => console.warn(`[ground] couldn't load ${groundModel} (serve over http).`));
 
 		// Replace the GROUND (bottom) model live from a user-picked file.
 		function loadGroundFile(file) {
@@ -941,15 +1023,19 @@
 			});
 		}
 
-		// --- scroll progress bar -----------------------------------------
-		function updateOverlay(p) {
-			progressEl.style.transform = `scaleX(${p})`;
-		}
-
 		// --- post-processing pipeline ------------------------------------
 		// RenderPass → Bloom → Grade(god-rays + vignette + chromatic
 		// aberration + film grain/dither) → OutputPass (tone map + sRGB).
-		const composer = new EffectComposer(renderer);
+		// Multisampled target → real MSAA through the composer (the default
+		// EffectComposer target isn't multisampled, which left edges + the
+		// normal-mapped rock aliasing/sparkling). Off on mobile for perf.
+		const composer = new EffectComposer(
+			renderer,
+			new THREE.WebGLRenderTarget(window.innerWidth, window.innerHeight, {
+				type: THREE.HalfFloatType,
+				samples: isMobile ? 0 : 4
+			})
+		);
 		composer.addPass(new RenderPass(scene, camera));
 
 		const bloomPass = new UnrealBloomPass(
@@ -988,9 +1074,12 @@
 					// vignette
 					col *= smoothstep(1.15, 0.35, length(d * vec2(uAspect, 1.0)));
 
-					// film grain + dither (breaks gradient banding)
+					// film grain + dither (breaks gradient banding). Luminance-aware:
+					// full strength in dark/flat areas where banding shows, faded out
+					// of bright detailed surfaces so the rock doesn't read as gritty.
 					float g = hash(uv * vec2(1920.0, 1080.0) + uTime) - 0.5;
-					col += g * uGrain;
+					float lum = dot(col, vec3(0.299, 0.587, 0.114));
+					col += g * uGrain * (1.0 - smoothstep(0.25, 0.9, lum));
 
 					gl_FragColor = vec4(col, 1.0);
 				}
@@ -1044,8 +1133,6 @@
 			camera.position.y = 0.3 + pointer.y * 0.4;   // keep the downward tilt so the warm gradient fills the frame
 			camera.lookAt(0, 0, 0);
 
-			updateOverlay(easedProgress);
-
 			// drifting mist
 			mistLayers.forEach((m) => {
 				m.position.x = m.userData.baseX + Math.sin(t * 0.05 + m.userData.seed) * 2.0;
@@ -1056,7 +1143,11 @@
 			gradePass.uniforms.uGrain.value = config.grain;
 			gradePass.uniforms.uChroma.value = config.chroma;
 			gradePass.uniforms.uTime.value = t;
+			// UnrealBloomPass runs its full downsample/upsample pyramid every frame
+			// even at strength 0 (where it adds nothing). Disable the pass entirely
+			// when bloom is off — EffectComposer skips it, output is pixel-identical.
 			bloomPass.strength = config.bloom;
+			bloomPass.enabled = config.bloom > 0;
 
 			// Multi-pass transmission: for each slab, hide ONLY that slab (swap
 			// to DiscardMaterial) and render the rest of the scene — including the

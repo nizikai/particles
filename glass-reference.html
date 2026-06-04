@@ -7,6 +7,31 @@
         opacity:.8;line-height:1.6;max-width:460px;pointer-events:none}
   #note b{color:#ffce9a}
   #err{position:fixed;left:16px;top:16px;color:#ff8a6a;font-size:12px;white-space:pre;display:none}
+
+  /* --- control panel (adapted from rotate-4) --- */
+  .panel{position:fixed;top:16px;right:16px;z-index:6;width:248px;
+         font:11px/1.4 ui-monospace,monospace;color:#f5ead3;user-select:none}
+  .panel-toggle{width:100%;padding:9px 12px;border:1px solid rgb(255 206 154 / .4);
+         border-radius:9px;background:rgb(10 6 2 / .82);color:#ffce9a;font:600 11px/1 inherit;
+         letter-spacing:.16em;text-transform:uppercase;cursor:pointer;backdrop-filter:blur(6px)}
+  .panel-body{margin-top:8px;padding:14px 14px 6px;border:1px solid rgb(255 206 154 / .22);
+         border-radius:10px;background:rgb(8 5 2 / .86);backdrop-filter:blur(8px);
+         max-height:calc(100vh - 80px);overflow-y:auto}
+  .panel.collapsed .panel-body{display:none}
+  .copy-btn{width:100%;margin:2px 0 10px;padding:9px 12px;border:1px solid rgb(255 206 154 / .5);
+         border-radius:9px;background:rgb(255 206 154 / .14);color:#ffce9a;font:600 11px/1 inherit;
+         letter-spacing:.16em;text-transform:uppercase;cursor:pointer}
+  .copy-btn:hover{background:rgb(255 206 154 / .24)}
+  .ctrl{margin-bottom:14px}
+  .ctrl label{display:flex;justify-content:space-between;margin-bottom:6px;
+         color:rgb(245 234 211 / .78);letter-spacing:.04em}
+  .ctrl label .val{color:#ffce9a;font-variant-numeric:tabular-nums}
+  .ctrl input[type="range"]{-webkit-appearance:none;appearance:none;width:100%;height:3px;
+         border-radius:3px;background:rgb(255 206 154 / .25);outline:none;cursor:pointer}
+  .ctrl input[type="range"]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;
+         width:14px;height:14px;border-radius:50%;background:#ffce9a;box-shadow:0 0 8px rgb(255 206 154 / .7)}
+  .ctrl input[type="range"]::-moz-range-thumb{width:14px;height:14px;border:none;
+         border-radius:50%;background:#ffce9a;box-shadow:0 0 8px rgb(255 206 154 / .7)}
 </style>
 <canvas id="c"></canvas>
 <div id="note">
@@ -16,6 +41,77 @@
   is generated in code (dark + one warm glow). Put <b>scene.glb</b> + <b>MeshTransmissionMaterial.js</b> next to this file and serve the folder.
 </div>
 <div id="err"></div>
+
+<div class="panel" id="panel">
+  <button class="panel-toggle" id="panelToggle">Controls</button>
+  <div class="panel-body">
+    <button class="copy-btn" id="copyBtn">Copy settings</button>
+    <div class="ctrl">
+      <label>Object size <span class="val" id="v-osize">1.0</span></label>
+      <input type="range" id="s-osize" min="0.1" max="3" step="0.05" value="1">
+    </div>
+    <div class="ctrl">
+      <label>Z width <span class="val" id="v-zwidth">1.0</span></label>
+      <input type="range" id="s-zwidth" min="0.1" max="3" step="0.05" value="1">
+    </div>
+    <div class="ctrl">
+      <label>Object X <span class="val" id="v-ox">0.0</span></label>
+      <input type="range" id="s-ox" min="-5" max="5" step="0.05" value="0">
+    </div>
+    <div class="ctrl">
+      <label>Object Y <span class="val" id="v-oy">0.0</span></label>
+      <input type="range" id="s-oy" min="-5" max="5" step="0.05" value="0">
+    </div>
+    <div class="ctrl">
+      <label>Object Z <span class="val" id="v-oz">0.0</span></label>
+      <input type="range" id="s-oz" min="-5" max="5" step="0.05" value="0">
+    </div>
+    <div class="ctrl">
+      <label>Transmission <span class="val" id="v-trans">1.00</span></label>
+      <input type="range" id="s-trans" min="0" max="1" step="0.01" value="1">
+    </div>
+    <div class="ctrl">
+      <label>Thickness <span class="val" id="v-thick">1.0</span></label>
+      <input type="range" id="s-thick" min="0" max="4" step="0.05" value="1">
+    </div>
+    <div class="ctrl">
+      <label>IOR <span class="val" id="v-ior">1.50</span></label>
+      <input type="range" id="s-ior" min="1" max="2.33" step="0.01" value="1.5">
+    </div>
+    <div class="ctrl">
+      <label>Roughness <span class="val" id="v-rough">0.00</span></label>
+      <input type="range" id="s-rough" min="0" max="1" step="0.01" value="0">
+    </div>
+    <div class="ctrl">
+      <label>Chromatic <span class="val" id="v-chroma">0.060</span></label>
+      <input type="range" id="s-chroma" min="0" max="1" step="0.005" value="0.06">
+    </div>
+    <div class="ctrl">
+      <label>Anisotropic blur <span class="val" id="v-aniso">0.10</span></label>
+      <input type="range" id="s-aniso" min="0" max="2" step="0.01" value="0.1">
+    </div>
+    <div class="ctrl">
+      <label>Clearcoat <span class="val" id="v-coat">1.00</span></label>
+      <input type="range" id="s-coat" min="0" max="1" step="0.01" value="1">
+    </div>
+    <div class="ctrl">
+      <label>Attenuation dist <span class="val" id="v-atten">4.0</span></label>
+      <input type="range" id="s-atten" min="0.1" max="10" step="0.1" value="4">
+    </div>
+    <div class="ctrl">
+      <label>Env intensity <span class="val" id="v-env">1.6</span></label>
+      <input type="range" id="s-env" min="0" max="4" step="0.05" value="1.6">
+    </div>
+    <div class="ctrl">
+      <label>Exposure <span class="val" id="v-exp">1.05</span></label>
+      <input type="range" id="s-exp" min="0" max="3" step="0.05" value="1.05">
+    </div>
+    <div class="ctrl">
+      <label>Auto-rotate <span class="val" id="v-spin">0.7</span></label>
+      <input type="range" id="s-spin" min="0" max="5" step="0.1" value="0.7">
+    </div>
+  </div>
+</div>
 
 <script type="importmap">
 {
@@ -49,13 +145,17 @@ controls.enableDamping = true;
 controls.autoRotate = true;
 controls.autoRotateSpeed = 0.7;
 
-/* ---- procedural high-contrast environment: dark + one warm glow ------------ */
-function makeEnvTexture() {
+/* ---- procedural high-contrast environment: dark + one warm glow ------------
+   The four `stops` are the vertical gradient (top→bottom). The background uses
+   pure-black-ish stops for drama; the *environment* used for reflection/
+   refraction uses a dim warm floor so glass never samples pure black (which
+   showed up as solid black patches on up-facing surfaces).                    */
+function makeEnvTexture(stops) {
   const cv = document.createElement('canvas'); cv.width = 1024; cv.height = 512;
   const x = cv.getContext('2d');
   const g = x.createLinearGradient(0, 0, 0, 512);
-  g.addColorStop(0.00, '#000000'); g.addColorStop(0.55, '#1a0c03');
-  g.addColorStop(0.78, '#4d1f02'); g.addColorStop(1.00, '#0a0502');
+  g.addColorStop(0.00, stops[0]); g.addColorStop(0.55, stops[1]);
+  g.addColorStop(0.78, stops[2]); g.addColorStop(1.00, stops[3]);
   x.fillStyle = g; x.fillRect(0, 0, 1024, 512);
   const r = x.createRadialGradient(512, 330, 0, 512, 330, 240);
   r.addColorStop(0.00, '#fff4e0'); r.addColorStop(0.25, '#ffb24d');
@@ -66,10 +166,11 @@ function makeEnvTexture() {
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
 }
-const equirect = makeEnvTexture();
+const bgEquirect  = makeEnvTexture(['#000000', '#1a0c03', '#4d1f02', '#0a0502']);
+const envEquirect = makeEnvTexture(['#2a1e12', '#3a2410', '#5a2e08', '#241a10']);
 const pmrem = new THREE.PMREMGenerator(renderer);
-scene.environment = pmrem.fromEquirectangular(equirect).texture;
-scene.background  = equirect;
+scene.environment = pmrem.fromEquirectangular(envEquirect).texture;
+scene.background  = bgEquirect;
 
 /* ---- split a fused geometry into connected components (separate slabs) ------ */
 function splitConnected(geometry) {
@@ -117,7 +218,7 @@ function splitConnected(geometry) {
 }
 
 function makeGlass() {
-  const m = new MeshTransmissionMaterial(10, false);
+  const m = new MeshTransmissionMaterial(32, false);
   m.transmission = 1; m._transmission = 1;
   m.thickness = 1.0; m.ior = 1.5; m.roughness = 0.0;
   m.chromaticAberration = 0.06; m.anisotropicBlur = 0.1;
@@ -131,6 +232,22 @@ function makeGlass() {
 const glassMeshes = [];      // each: { mesh, mat, fbo }
 const pivot = new THREE.Group();
 scene.add(pivot);
+let baseScale = 1;           // auto-fit scale; the size slider multiplies this
+let sizeMul = 1;             // size-slider multiplier (so it survives (re)loads)
+let zWidth = 1;              // extra non-uniform stretch along Z
+function applyScale() {
+  const s = baseScale * sizeMul;
+  pivot.scale.set(s, s, s * zWidth);
+}
+
+// The transmission ray length = thickness * modelScale, and Z-stretch inflates
+// modelScale.z — which pushes volume attenuation toward black. Divide thickness
+// by the Z-stretch so deepening the object no longer darkens it into speckle.
+let thicknessVal = 1;
+function applyThickness() {
+  const f = Math.max(zWidth, 1);
+  applyToGlass(m => m.thickness = thicknessVal / f);
+}
 
 const loader = new GLTFLoader();
 loader.load('scene.glb', (gltf) => {
@@ -155,7 +272,8 @@ loader.load('scene.glb', (gltf) => {
   const size = box.getSize(new THREE.Vector3());
   const center = box.getCenter(new THREE.Vector3());
   pivot.children.forEach(c => c.position.sub(center));
-  pivot.scale.setScalar(4.0 / Math.max(size.x, size.y, size.z));
+  baseScale = 4.0 / Math.max(size.x, size.y, size.z);
+  applyScale();
 }, undefined, (e) => {
   const el = document.getElementById('err');
   el.style.display = 'block';
@@ -189,6 +307,59 @@ addEventListener('resize', () => {
   renderer.setSize(innerWidth, innerHeight);
   glassMeshes.forEach(g => g.fbo.setSize(innerWidth, innerHeight));
 });
+
+/* ---- control panel wiring (adapted from rotate-4) ------------------------- */
+const panel = document.getElementById('panel');
+document.getElementById('panelToggle').addEventListener('click', () => {
+  panel.classList.toggle('collapsed');
+});
+
+// Copy the current slider values as a JS object literal, so a tuned look can
+// be saved / pasted back in. Keys come from each slider's id (minus "s-").
+const copyBtn = document.getElementById('copyBtn');
+copyBtn.addEventListener('click', () => {
+  const sliders = panel.querySelectorAll('input[type="range"]');
+  const text = '{\n' +
+    [...sliders].map(s => `  ${s.id.replace(/^s-/, '')}: ${s.value},`).join('\n') +
+    '\n}';
+  navigator.clipboard.writeText(text).then(() => {
+    copyBtn.textContent = 'Copied!';
+    setTimeout(() => (copyBtn.textContent = 'Copy settings'), 1200);
+  }).catch(() => {
+    copyBtn.textContent = 'Copy failed';
+    setTimeout(() => (copyBtn.textContent = 'Copy settings'), 1200);
+  });
+});
+
+// Apply a material property to every glass slab (they may load after wiring).
+function applyToGlass(fn) { glassMeshes.forEach(g => fn(g.mat)); }
+
+function bindSlider(id, valId, onChange, fmt = (v) => v.toFixed(2)) {
+  const slider = document.getElementById(id);
+  const out = document.getElementById(valId);
+  slider.addEventListener('input', () => {
+    const v = parseFloat(slider.value);
+    out.textContent = fmt(v);
+    onChange(v);
+  });
+}
+
+bindSlider('s-osize','v-osize', (v) => { sizeMul = v; applyScale(); }, (v) => v.toFixed(1));
+bindSlider('s-zwidth','v-zwidth',(v) => { zWidth = v; applyScale(); applyThickness(); }, (v) => v.toFixed(1));
+bindSlider('s-ox',   'v-ox',    (v) => { pivot.position.x = v; }, (v) => v.toFixed(1));
+bindSlider('s-oy',   'v-oy',    (v) => { pivot.position.y = v; }, (v) => v.toFixed(1));
+bindSlider('s-oz',   'v-oz',    (v) => { pivot.position.z = v; }, (v) => v.toFixed(1));
+bindSlider('s-trans', 'v-trans', (v) => applyToGlass(m => { m.transmission = v; m._transmission = v; }));
+bindSlider('s-thick', 'v-thick', (v) => { thicknessVal = v; applyThickness(); }, (v) => v.toFixed(1));
+bindSlider('s-ior',   'v-ior',   (v) => applyToGlass(m => m.ior = v));
+bindSlider('s-rough', 'v-rough', (v) => applyToGlass(m => m.roughness = v));
+bindSlider('s-chroma','v-chroma',(v) => applyToGlass(m => m.chromaticAberration = v), (v) => v.toFixed(3));
+bindSlider('s-aniso', 'v-aniso', (v) => applyToGlass(m => m.anisotropicBlur = v));
+bindSlider('s-coat',  'v-coat',  (v) => applyToGlass(m => m.clearcoat = v));
+bindSlider('s-atten', 'v-atten', (v) => applyToGlass(m => m.attenuationDistance = v), (v) => v.toFixed(1));
+bindSlider('s-env',   'v-env',   (v) => applyToGlass(m => m.envMapIntensity = v), (v) => v.toFixed(1));
+bindSlider('s-exp',   'v-exp',   (v) => { renderer.toneMappingExposure = v; }, (v) => v.toFixed(2));
+bindSlider('s-spin',  'v-spin',  (v) => { controls.autoRotateSpeed = v; }, (v) => v.toFixed(1));
 
 (function loop(){ requestAnimationFrame(loop); controls.update(); render(); })();
 </script>
