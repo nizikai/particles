@@ -490,6 +490,58 @@
 		let easedProgress = 0;      // smoothed, drives rotation
 		const pointer = { x: 0, y: 0, tx: 0, ty: 0 };
 
+		// --- gyroscope (mobile/tablet) — overrides pointer when available ----
+		const GYRO_TILT_RANGE = 22;   // degrees of physical tilt = full -1..1 range
+		const GYRO_SMOOTH = 0.08;
+		const gyro = {
+			enabled: false, hasReading: false, listening: false,
+			permissionRequested: false, permissionDenied: false,
+			baseBeta: null, baseGamma: null,
+			tx: 0, ty: 0, x: 0, y: 0
+		};
+
+		function onDeviceOrientation(e) {
+			const beta = Number(e.beta), gamma = Number(e.gamma);
+			if (!Number.isFinite(beta) || !Number.isFinite(gamma)) return;
+			if (gyro.baseBeta === null) { gyro.baseBeta = beta; gyro.baseGamma = gamma; }
+			gyro.tx = Math.max(-1, Math.min(1, (gamma - gyro.baseGamma) / GYRO_TILT_RANGE));
+			gyro.ty = Math.max(-1, Math.min(1, (gyro.baseBeta  - beta)  / GYRO_TILT_RANGE));
+			gyro.enabled = true;
+			gyro.hasReading = true;
+		}
+
+		function enableGyro() {
+			if (gyro.listening) return;
+			gyro.baseBeta = null; gyro.baseGamma = null;
+			window.addEventListener("deviceorientation", onDeviceOrientation, { passive: true });
+			gyro.listening = true;
+		}
+
+		async function requestGyroAccess() {
+			if (gyro.listening || gyro.permissionDenied || gyro.permissionRequested) return;
+			if (typeof DeviceOrientationEvent?.requestPermission !== "function") { enableGyro(); return; }
+			gyro.permissionRequested = true;
+			try {
+				if (await DeviceOrientationEvent.requestPermission() === "granted") enableGyro();
+				else gyro.permissionDenied = true;
+			} catch { gyro.permissionRequested = false; }
+		}
+
+		function setupGyro() {
+			if (!("DeviceOrientationEvent" in window)) return;
+			if (typeof DeviceOrientationEvent?.requestPermission === "function") {
+				// iOS 13+ requires a user-gesture to grant permission
+				const onGesture = () => {
+					requestGyroAccess();
+					window.removeEventListener("touchend", onGesture, true);
+				};
+				window.addEventListener("touchend", onGesture, { passive: true, capture: true });
+			} else {
+				// Android / non-gated browsers — enable straight away
+				enableGyro();
+			}
+		}
+
 		// --- live-tunable config (driven by the control panel) ------------
 		const config = {
 			particleCount: 2000,
@@ -1186,6 +1238,13 @@
 
 			// smooth the scroll value for inertial rotation
 			easedProgress += (scrollProgress - easedProgress) * 0.08;
+			// gyro overrides pointer target when a reading is available
+			if (gyro.enabled && gyro.hasReading) {
+				gyro.x += (gyro.tx - gyro.x) * GYRO_SMOOTH;
+				gyro.y += (gyro.ty - gyro.y) * GYRO_SMOOTH;
+				pointer.tx = gyro.x;
+				pointer.ty = gyro.y;
+			}
 			pointer.x += (pointer.tx - pointer.x) * 0.05;
 			pointer.y += (pointer.ty - pointer.y) * 0.05;
 
@@ -1436,6 +1495,7 @@
 		bindSlider("s-chroma", "v-chroma", (v) => { config.chroma = v; }, (v) => v.toFixed(3));
 		bindSlider("s-grain", "v-grain", (v) => { config.grain = v; }, (v) => v.toFixed(2));
 
+		setupGyro();
 		readScroll();
 		tick();
 	})();
