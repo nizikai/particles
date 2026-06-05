@@ -1,7 +1,4 @@
-// Vanilla Three.js port of drei's MeshTransmissionMaterial.
-// Original shader: @N8Programs  https://gist.github.com/N8python/eb42d25c7cd00d12e965ac9cba544317
-// Ported from pmndrs/drei (MIT). React stripped out; the per-frame FBO/discard
-// logic that gives you glass-through-glass lives in the host file's render loop.
+
 import * as THREE from 'three';
 
 // Renders nothing — used to make a mesh invisible while we capture what's behind it.
