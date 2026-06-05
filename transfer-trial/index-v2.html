@@ -29,7 +29,7 @@
 		}
 
 		/* Tall scroll track — this is what we scrub the rotation against. */
-		.scroll-track { height: 500vh; }
+		.scroll-track { height: 520vh; }
 
 		#webgl {
 			position: fixed;
@@ -40,6 +40,14 @@
 			display: block;
 			z-index: 1;
 			touch-action: pan-y;
+		}
+
+		#outro-veil {
+			position: fixed;
+			inset: 0;
+			z-index: 3;
+			pointer-events: none;
+			background: transparent;
 		}
 
 		/* Pinned overlay copy, bikebear-style. */
@@ -295,6 +303,7 @@
 </head>
 <body>
 	<canvas id="webgl"></canvas>
+	<div id="outro-veil"></div>
 
 	<h1 class="headline">We build what the internet hasn't seen before.</h1>
 
@@ -487,12 +496,15 @@
 
 		// --- scroll state -------------------------------------------------
 		let scrollProgress = 0;     // 0..1 raw from scrollbar
-		let easedProgress = 0;      // smoothed, drives rotation
+		let easedProgress = 0;      // smoothed, drives rotation (uncapped — continues past 500vh)
+		let easedScene = 0;         // smoothed 0..1, drives camera dolly only (capped at 500vh)
+		let easedOutro = 0;         // smoothed 0..1 for the extra 20vh outro
+		const SCENE_RATIO = 500 / 520; // scene animations freeze at this scroll fraction
 		const pointer = { x: 0, y: 0, tx: 0, ty: 0 };
 
 		// --- gyroscope (mobile/tablet) — overrides pointer when available ----
 		const GYRO_TILT_RANGE = 22;   // degrees of physical tilt = full -1..1 range
-		const GYRO_SMOOTH = 0.08;
+		const GYRO_SMOOTH = 0.18;
 		const gyro = {
 			enabled: false, hasReading: false, listening: false,
 			permissionRequested: false, permissionDenied: false,
@@ -528,6 +540,7 @@
 		}
 
 		function setupGyro() {
+			if (!isMobile) return;
 			if (!("DeviceOrientationEvent" in window)) return;
 			if (typeof DeviceOrientationEvent?.requestPermission === "function") {
 				// iOS 13+ requires a user-gesture to grant permission
@@ -1237,7 +1250,13 @@
 			flakeTime += dt * config.glowSpeed;   // glow/flake speed slider
 
 			// smooth the scroll value for inertial rotation
-			easedProgress += (scrollProgress - easedProgress) * 0.08;
+			// cap scene animations at the 500vh mark; extra 20vh drives outro only
+			const sceneProgress = Math.min(scrollProgress / SCENE_RATIO, 1);
+			const rotProgress   = scrollProgress / SCENE_RATIO;   // uncapped — keeps increasing after 500vh
+			const outroProgress = Math.max(0, (scrollProgress - SCENE_RATIO) / (1 - SCENE_RATIO));
+			easedProgress += (rotProgress   - easedProgress) * 0.08;
+			easedScene    += (sceneProgress - easedScene)    * 0.08;
+			easedOutro    += (outroProgress - easedOutro)    * 0.06;
 			// gyro overrides pointer target when a reading is available
 			if (gyro.enabled && gyro.hasReading) {
 				gyro.x += (gyro.tx - gyro.x) * GYRO_SMOOTH;
@@ -1260,6 +1279,16 @@
 				groundPivot.rotation.y = easedProgress * Math.PI * config.groundTurns;
 			}
 
+			// outro veil: black sweeps from right to left following the pillar
+			if (outroProgress > 0) {
+				const edgePct = (1 - easedOutro) * 100;
+				const fadeW = 18;
+				document.getElementById("outro-veil").style.background =
+					`linear-gradient(to right, transparent ${Math.max(0, edgePct - fadeW).toFixed(1)}%, #000 ${edgePct.toFixed(1)}%)`;
+			} else {
+				document.getElementById("outro-veil").style.background = "transparent";
+			}
+
 			// rotate the sky + environment so the warm glow sweeps through view
 			// (the lively feel from orbiting in glass-reference):
 			//  - scroll spin (skyTurns) at its OWN rate, distinct from the logo
@@ -1275,7 +1304,7 @@
 			particles.mat.uniforms.u_time.value = flakeTime;
 
 			// gentle camera dolly through the scroll
-			camera.position.z = config.cameraDist - easedProgress * 2.2;
+			camera.position.z = config.cameraDist - easedScene * 2.2;
 			camera.position.x = -pointer.x * 0.6;
 			camera.position.y = 0.3 - pointer.y * 0.4;   // keep the downward tilt so the warm gradient fills the frame
 			camera.lookAt(0, 0, 0);
