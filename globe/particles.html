@@ -1,0 +1,1280 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<title>Particles · edge distort</title>
+	<style>
+		* { box-sizing: border-box; margin: 0; padding: 0; }
+		html, body { width: 100%; background: #000; }
+		#webgl { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; z-index: 1; }
+		.scroll-track { height: 600vh; }
+
+		#panel {
+			position: fixed; top: 16px; right: 16px; z-index: 10;
+			width: 230px; padding: 14px 16px;
+			font: 11px/1.4 ui-monospace, "SF Mono", Menlo, monospace;
+			color: #e8d8c0; background: rgba(16,12,8,0.62);
+			border: 1px solid rgba(255,212,154,0.18); border-radius: 10px;
+			backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+			user-select: none;
+		}
+		#panel { max-height: calc(100vh - 32px); overflow-y: auto; }
+		#panel.hidden .ctrl, #panel.hidden .group,
+		#panel.hidden #metrics, #panel.hidden #btn-row,
+		#panel.hidden .panel-btn { display: none; }
+		.group {
+			margin-top: 16px; font-size: 9px; font-weight: 600;
+			letter-spacing: .14em; text-transform: uppercase;
+			color: rgba(255,212,154,0.55); cursor: pointer;
+			border-bottom: 1px solid rgba(255,212,154,0.12); padding-bottom: 4px;
+		}
+		.group:hover { color: rgba(255,212,154,0.85); }
+		.group::before { content: "▾ "; }
+		.group.closed::before { content: "▸ "; }
+		#metrics {
+			margin-top: 14px; padding-top: 10px;
+			border-top: 1px solid rgba(255,212,154,0.15);
+		}
+		#metrics div { display: flex; justify-content: space-between; margin-bottom: 3px; }
+		#metrics span:last-child { color: #ffd49a; }
+		.panel-btn {
+			margin-top: 12px; width: 100%; padding: 7px 0;
+			font: inherit; color: #ffd49a; cursor: pointer;
+			background: rgba(255,212,154,0.10);
+			border: 1px solid rgba(255,212,154,0.3); border-radius: 6px;
+		}
+		.panel-btn:hover { background: rgba(255,212,154,0.2); }
+		#btn-row { display: flex; gap: 6px; }
+		#btn-row .panel-btn { flex: 1; }
+		#reset-btn { margin-top: 6px; }
+		#panel h2 {
+			display: flex; justify-content: space-between; align-items: center;
+			font-size: 10px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase;
+			color: #ffd49a; margin-bottom: 4px;
+		}
+		#panel h2 button {
+			all: unset; cursor: pointer; color: #ffd49a; opacity: .7;
+			font-size: 13px; line-height: 1; padding: 2px 4px;
+		}
+		#panel h2 button:hover { opacity: 1; }
+		.ctrl { margin-top: 12px; }
+		.ctrl label { display: flex; justify-content: space-between; margin-bottom: 5px; }
+		.ctrl label span:last-child { color: #ffd49a; }
+		.ctrl input[type=range] {
+			-webkit-appearance: none; appearance: none; width: 100%; height: 3px;
+			background: rgba(255,212,154,0.22); border-radius: 3px; outline: none;
+		}
+		.ctrl input[type=range]::-webkit-slider-thumb {
+			-webkit-appearance: none; appearance: none; width: 13px; height: 13px;
+			border-radius: 50%; background: #ffd49a; cursor: pointer;
+			box-shadow: 0 0 8px rgba(255,212,154,0.6);
+		}
+		.ctrl input[type=range]::-moz-range-thumb {
+			width: 13px; height: 13px; border: none; border-radius: 50%;
+			background: #ffd49a; cursor: pointer;
+		}
+		#city-search, #nation-search, .ctrl select {
+			width: 100%; padding: 6px 8px; font: inherit;
+			color: #e8d8c0; background: rgba(255,212,154,0.08);
+			border: 1px solid rgba(255,212,154,0.25); border-radius: 6px; outline: none;
+		}
+		.ctrl select option { background: #16100a; }
+		#city-search::placeholder, #nation-search::placeholder { color: rgba(232,216,192,0.4); }
+		#city-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+		.chip {
+			display: inline-flex; align-items: center; gap: 4px;
+			padding: 3px 6px; font-size: 10px; color: #ffd49a;
+			background: rgba(255,212,154,0.12);
+			border: 1px solid rgba(255,212,154,0.3); border-radius: 10px; cursor: pointer;
+		}
+		.chip:hover { background: rgba(255,212,154,0.22); }
+		.ctrl input[type=color] {
+			width: 100%; height: 26px; padding: 2px;
+			background: rgba(255,212,154,0.08);
+			border: 1px solid rgba(255,212,154,0.25); border-radius: 6px; cursor: pointer;
+		}
+	</style>
+</head>
+<body>
+	<canvas id="webgl"></canvas>
+
+	<div id="panel">
+		<h2>Controls <span><button id="panel-toggle" title="collapse">–</button><button id="panel-hide" title="hide panel (press S to show)">✕</button></span></h2>
+
+		<div class="group">Particles</div>
+		<div class="ctrl">
+			<label><span>Drift count</span><span id="v-count"></span></label>
+			<input id="c-count" type="range" min="200" max="8000" step="100" />
+		</div>
+		<div class="ctrl">
+			<label><span>Globe count</span><span id="v-gcount"></span></label>
+			<input id="c-gcount" type="range" min="200" max="12000" step="100" />
+		</div>
+		<div class="ctrl">
+			<label><span>Size</span><span id="v-size"></span></label>
+			<input id="c-size" type="range" min="4" max="40" step="1" />
+		</div>
+		<div class="ctrl">
+			<label><span>Shape (jagged)</span><span id="v-shape"></span></label>
+			<input id="c-shape" type="range" min="0" max="1" step="0.01" />
+		</div>
+		<div class="ctrl">
+			<label><span>Flutter</span><span id="v-speed"></span></label>
+			<input id="c-speed" type="range" min="0" max="1.5" step="0.05" />
+		</div>
+
+		<div class="group">Scroll</div>
+		<div class="ctrl">
+			<label><span>Scroll length</span><span id="v-slen"></span></label>
+			<input id="c-slen" type="range" min="200" max="1200" step="50" />
+		</div>
+		<div class="ctrl">
+			<label><span>Scroll rise</span><span id="v-rise"></span></label>
+			<input id="c-rise" type="range" min="0" max="150" step="5" />
+		</div>
+		<div class="ctrl">
+			<label><span>Form start</span><span id="v-start"></span></label>
+			<input id="c-start" type="range" min="0" max="1" step="0.01" />
+		</div>
+		<div class="ctrl">
+			<label><span>Form end</span><span id="v-end"></span></label>
+			<input id="c-end" type="range" min="0" max="1" step="0.01" />
+		</div>
+
+		<div class="group">Globe</div>
+		<div class="ctrl">
+			<label><span>Camera dist</span><span id="v-cam"></span></label>
+			<input id="c-cam" type="range" min="5" max="20" step="0.5" />
+		</div>
+		<div class="ctrl">
+			<label><span>Radius</span><span id="v-radius"></span></label>
+			<input id="c-radius" type="range" min="1" max="3.2" step="0.05" />
+		</div>
+		<div class="ctrl">
+			<label><span>Brightness</span><span id="v-bright"></span></label>
+			<input id="c-bright" type="range" min="1" max="4" step="0.1" />
+		</div>
+		<div class="ctrl">
+			<label><span>Spin</span><span id="v-spin"></span></label>
+			<input id="c-spin" type="range" min="0" max="0.15" step="0.005" />
+		</div>
+		<div class="ctrl">
+			<label><span>Auto-flutter</span><span id="v-aflutter"></span></label>
+			<input id="c-aflutter" type="range" min="0" max="1" step="0.05" />
+		</div>
+
+		<div class="group">Locations</div>
+		<div class="ctrl">
+			<input id="city-search" list="city-list" placeholder="Search a city…" autocomplete="off" />
+			<datalist id="city-list"></datalist>
+		</div>
+		<div class="ctrl">
+			<input id="nation-search" list="nation-list" placeholder="Search a nation…" autocomplete="off" />
+			<datalist id="nation-list"></datalist>
+			<div id="city-chips"></div>
+		</div>
+		<div class="ctrl">
+			<label><span>Pulse</span><span id="v-pulse"></span></label>
+			<input id="c-pulse" type="range" min="0" max="1" step="0.05" />
+		</div>
+		<div class="ctrl">
+			<label><span>Radar rings</span><span id="v-radar"></span></label>
+			<input id="c-radar" type="range" min="0" max="1" step="0.05" />
+		</div>
+		<div class="ctrl">
+			<label><span>Radar style</span></label>
+			<select id="c-rstyle">
+				<option value="0">Ping</option>
+				<option value="1">Sweep</option>
+				<option value="2">Crosshair</option>
+			</select>
+		</div>
+		<div class="ctrl">
+			<label><span>Radar speed</span><span id="v-rspeed"></span></label>
+			<input id="c-rspeed" type="range" min="0.1" max="1.5" step="0.05" />
+		</div>
+		<div class="ctrl">
+			<label><span>Radar size</span><span id="v-rsize"></span></label>
+			<input id="c-rsize" type="range" min="100" max="600" step="10" />
+		</div>
+
+		<div class="group">Colors</div>
+		<div class="ctrl">
+			<label><span>Particle dim</span></label>
+			<input id="c-cola" type="color" />
+		</div>
+		<div class="ctrl">
+			<label><span>Particle bright</span></label>
+			<input id="c-colb" type="color" />
+		</div>
+		<div class="ctrl">
+			<label><span>Radar</span></label>
+			<input id="c-colr" type="color" />
+		</div>
+		<div class="ctrl">
+			<label><span>Background</span></label>
+			<input id="c-colbg" type="color" />
+		</div>
+
+		<div class="group">Look</div>
+		<div class="ctrl">
+			<label><span>Bloom</span><span id="v-bloom"></span></label>
+			<input id="c-bloom" type="range" min="0" max="0.5" step="0.01" />
+		</div>
+		<div class="ctrl">
+			<label><span>Bloom burn</span><span id="v-burn"></span></label>
+			<input id="c-burn" type="range" min="0" max="1.5" step="0.05" />
+		</div>
+		<div class="ctrl">
+			<label><span>Bloom radius</span><span id="v-bradius"></span></label>
+			<input id="c-bradius" type="range" min="0" max="1" step="0.05" />
+		</div>
+		<div class="ctrl">
+			<label><span>Bloom cutoff</span><span id="v-bcut"></span></label>
+			<input id="c-bcut" type="range" min="0" max="1" step="0.05" />
+		</div>
+		<div class="ctrl">
+			<label><span>Edge distort</span><span id="v-chroma"></span></label>
+			<input id="c-chroma" type="range" min="0" max="0.05" step="0.001" />
+		</div>
+		<div class="ctrl">
+			<label><span>Grain</span><span id="v-grain"></span></label>
+			<input id="c-grain" type="range" min="0" max="0.05" step="0.001" />
+		</div>
+
+		<div id="metrics">
+			<div><span>scroll</span><span id="m-scroll">0%</span></div>
+			<div><span>globe</span><span id="m-globe">0%</span></div>
+			<div><span>fps</span><span id="m-fps">–</span></div>
+			<div><span>visible</span><span id="m-visible">–</span></div>
+		</div>
+		<div id="btn-row">
+			<button id="copy-btn" class="panel-btn">Copy</button>
+			<button id="paste-btn" class="panel-btn">Paste</button>
+		</div>
+		<button id="reset-btn" class="panel-btn">Reset to defaults</button>
+	</div>
+
+	<div class="scroll-track"></div>
+
+	<script type="importmap">
+	{
+		"imports": {
+			"three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+			"three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+		}
+	}
+	</script>
+	<script type="module">
+	import * as THREE from "three";
+	import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+	import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+	import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+	import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
+	import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
+
+	(() => {
+		const canvas = document.getElementById("webgl");
+		const isMobile = matchMedia("(pointer: coarse)").matches || window.innerWidth < 768;
+
+		// --- tunables (matched to the original scene) --------------------
+		const config = {
+			introCount: 1500,    // particles visible in the drift intro
+			globeCount: 4000,    // particles visible on the formed globe
+			particleSize: 20,    // base point size in px
+			shape: 1.0,          // 0 = round dots, 1 = jagged irregular flakes
+			glowSpeed: 0.1,      // flake flutter + glint speed
+			cameraDist: 10,      // camera distance
+			bloom: 0.1,          // glow off bright areas
+			chroma: 0.05,        // chromatic aberration toward edges (the "distort")
+			grain: 0.0,          // film grain + dither
+			scrollRise: 70,      // total vertical travel (world units) over a full scroll
+			morphStart: 0.15,    // scroll progress where the globe starts forming
+			morphEnd: 0.65,      // scroll progress where it's fully formed
+			globeRadius: 2.2,    // world-unit radius of the formed globe
+			brightness: 2.6,     // front-hemisphere boost on the formed globe
+			spinSpeed: 0.03,     // globe rotation, radians per second
+			bloomBoost: 0.25,    // extra bloom added at full morph (kept gentle — the shader halo does the burn)
+			bloomRadius: 1,      // bloom spread — high values weight low-res blur mips and go blocky
+			bloomThreshold: 0,   // luminance cutoff — sparse hot pixels above a high cutoff bloom as squares
+			autoFlutter: 0.1,    // flutter that wakes up automatically on the globe
+			cityPulse: 0.15,     // pulse amplitude on selected cities (0 = off)
+			cityRadar: 0.3,      // radar-ring opacity on selected cities (0 = off)
+			radarStyle: 0,       // 0 = ping rings, 1 = sweep, 2 = crosshair
+			radarSpeed: 0.4,     // radar animation rate (cycles per second-ish)
+			radarSize: 320,      // radar sprite size in px
+			scrollLen: 600,      // scroll track height in vh — how long the section scrolls
+			colorA: "#6a4420",   // particle dim color
+			colorB: "#ffd49a",   // particle bright color
+			radarColor: "#ffd499",
+			background: "#000000"
+		};
+
+		// settings persist across reloads so a buyer's tuning survives + ships
+		const STORE_KEY = "globe-settings";
+		let savedSettings = null;
+		try { savedSettings = JSON.parse(localStorage.getItem(STORE_KEY)); } catch {}
+		if (savedSettings) for (const k in savedSettings) if (k in config) config[k] = savedSettings[k];
+
+		const FIELD_H = 24;      // vertical wrap span — particles loop within this height
+		const pointer = { x: 0, y: 0, tx: 0, ty: 0 };
+		let flakeTime = 0;
+		let scrollProgress = 0;  // 0..1 raw from scrollbar
+		let easedScroll = 0;     // smoothed rise distance in world units
+		let easedMorph = 0;      // smoothed 0..1 — loose field → globe
+		let dragSpin = 0;        // extra globe rotation accumulated from mouse drag
+		let hoverCity = -1;      // CITIES index under the cursor (-1 = none)
+		const selectedCities = new Set();   // CITIES indices the user highlighted
+
+		function readScroll() {
+			const max = document.documentElement.scrollHeight - window.innerHeight;
+			scrollProgress = max > 0 ? Math.min(1, Math.max(0, window.scrollY / max)) : 0;
+		}
+
+		// --- renderer / scene --------------------------------------------
+		const renderer = new THREE.WebGLRenderer({ canvas, antialias: !isMobile, alpha: false });
+		renderer.setPixelRatio(Math.min(window.devicePixelRatio, isMobile ? 1.5 : 2));
+		renderer.setSize(window.innerWidth, window.innerHeight);
+		renderer.outputColorSpace = THREE.SRGBColorSpace;
+		renderer.toneMapping = THREE.ACESFilmicToneMapping;
+		renderer.toneMappingExposure = 1.05;
+
+		const scene = new THREE.Scene();
+
+		const camera = new THREE.PerspectiveCamera(35, window.innerWidth / window.innerHeight, 0.1, 100);
+		camera.position.set(0, 0.3, config.cameraDist);
+		camera.lookAt(0, 0, 0);
+
+		// --- earth targets -------------------------------------------------
+		// [lat, lon, name] — locations get dense, bright clusters on the globe.
+		// nation entries point at their flagship metro (Indonesia → Jakarta).
+		// ponytail: the vec2-packed per-location uniform array caps the combined
+		// list around ~220 entries on low-end mobile GPUs; move glow/dim to a
+		// vertex attribute if it needs to grow past that.
+		const CITY_DATA = [
+			[35.7,139.7,"Tokyo"],[28.6,77.2,"Delhi"],[31.2,121.5,"Shanghai"],[-23.5,-46.6,"São Paulo"],
+			[19.4,-99.1,"Mexico City"],[30.0,31.2,"Cairo"],[19.1,72.9,"Mumbai"],[39.9,116.4,"Beijing"],
+			[23.8,90.4,"Dhaka"],[40.7,-74.0,"New York"],[24.9,67.0,"Karachi"],[-34.6,-58.4,"Buenos Aires"],
+			[41.0,28.9,"Istanbul"],[6.5,3.4,"Lagos"],[51.5,-0.1,"London"],[48.9,2.4,"Paris"],
+			[55.8,37.6,"Moscow"],[34.1,-118.2,"Los Angeles"],[-6.2,106.8,"Jakarta"],[1.4,103.8,"Singapore"],
+			[-33.9,151.2,"Sydney"],[-26.2,28.0,"Johannesburg"],[-1.3,36.8,"Nairobi"],[-22.9,-43.2,"Rio de Janeiro"],
+			[-12.0,-77.0,"Lima"],[43.7,-79.4,"Toronto"],[37.6,127.0,"Seoul"],[13.8,100.5,"Bangkok"],
+			[25.2,55.3,"Dubai"],[40.4,-3.7,"Madrid"],[52.5,13.4,"Berlin"],
+			[41.9,-87.6,"Chicago"],[37.8,-122.4,"San Francisco"],[25.8,-80.2,"Miami"],[47.6,-122.3,"Seattle"],
+			[29.8,-95.4,"Houston"],[38.9,-77.0,"Washington D.C."],[42.4,-71.1,"Boston"],[36.2,-115.1,"Las Vegas"],
+			[32.8,-96.8,"Dallas"],[39.7,-105.0,"Denver"],[33.7,-84.4,"Atlanta"],[32.7,-117.2,"San Diego"],
+			[21.3,-157.9,"Honolulu"],[49.3,-123.1,"Vancouver"],[45.5,-73.6,"Montreal"],[23.1,-82.4,"Havana"],
+			[9.0,-79.5,"Panama City"],[20.7,-103.3,"Guadalajara"],[4.7,-74.1,"Bogotá"],[6.2,-75.6,"Medellín"],
+			[10.5,-66.9,"Caracas"],[-33.4,-70.7,"Santiago"],[-34.9,-56.2,"Montevideo"],[-15.8,-47.9,"Brasília"],
+			[33.6,-7.6,"Casablanca"],[36.8,10.2,"Tunis"],[36.7,3.1,"Algiers"],[14.7,-17.5,"Dakar"],
+			[5.6,-0.2,"Accra"],[-4.3,15.3,"Kinshasa"],[9.0,38.7,"Addis Ababa"],[-6.8,39.3,"Dar es Salaam"],
+			[-33.9,18.4,"Cape Town"],[24.7,46.7,"Riyadh"],[21.5,39.2,"Jeddah"],[24.5,54.4,"Abu Dhabi"],
+			[25.3,51.5,"Doha"],[35.7,51.4,"Tehran"],[33.3,44.4,"Baghdad"],[32.1,34.8,"Tel Aviv"],
+			[31.8,35.2,"Jerusalem"],[33.9,35.5,"Beirut"],[31.9,35.9,"Amman"],[39.9,32.9,"Ankara"],
+			[50.5,30.5,"Kyiv"],[52.2,21.0,"Warsaw"],[48.2,16.4,"Vienna"],[50.1,14.4,"Prague"],
+			[47.5,19.0,"Budapest"],[44.4,26.1,"Bucharest"],[41.9,12.5,"Rome"],[45.5,9.2,"Milan"],
+			[45.4,12.3,"Venice"],[40.9,14.3,"Naples"],[41.4,2.2,"Barcelona"],[52.4,4.9,"Amsterdam"],
+			[50.8,4.4,"Brussels"],[47.4,8.5,"Zurich"],[46.2,6.1,"Geneva"],[48.1,11.6,"Munich"],
+			[50.1,8.7,"Frankfurt"],[53.5,-2.2,"Manchester"],[56.0,-3.2,"Edinburgh"],[59.3,18.1,"Stockholm"],
+			[59.9,10.8,"Oslo"],[55.7,12.6,"Copenhagen"],[60.2,24.9,"Helsinki"],[64.1,-21.9,"Reykjavík"],
+			[59.9,30.3,"St. Petersburg"],[38.7,-9.1,"Lisbon"],[38.0,23.7,"Athens"],[53.3,-6.3,"Dublin"],
+			[33.7,73.0,"Islamabad"],[27.7,85.3,"Kathmandu"],[6.9,79.9,"Colombo"],[13.1,80.3,"Chennai"],
+			[22.6,88.4,"Kolkata"],[17.4,78.5,"Hyderabad"],[13.0,77.6,"Bangalore"],[16.8,96.2,"Yangon"],
+			[21.0,105.8,"Hanoi"],[11.6,104.9,"Phnom Penh"],[10.8,106.7,"Ho Chi Minh City"],[-8.7,115.2,"Bali"],
+			[22.3,114.2,"Hong Kong"],[22.5,114.1,"Shenzhen"],[23.1,113.3,"Guangzhou"],[30.7,104.1,"Chengdu"],
+			[34.3,108.9,"Xi'an"],[25.0,121.6,"Taipei"],[14.6,121.0,"Manila"],[3.1,101.7,"Kuala Lumpur"],
+			[34.7,135.5,"Osaka"],[35.0,135.8,"Kyoto"],[35.2,129.1,"Busan"],[-37.8,145.0,"Melbourne"],
+			[-32.0,115.9,"Perth"],[-27.5,153.0,"Brisbane"],[-36.8,174.8,"Auckland"],[-41.3,174.8,"Wellington"]
+		];
+		const NATION_DATA = [
+			[40.7,-74.0,"United States"],[51.5,-0.1,"United Kingdom"],[48.9,2.4,"France"],[52.5,13.4,"Germany"],
+			[40.4,-3.7,"Spain"],[41.9,12.5,"Italy"],[52.4,4.9,"Netherlands"],[47.4,8.5,"Switzerland"],
+			[48.2,16.4,"Austria"],[50.8,4.4,"Belgium"],[59.3,18.1,"Sweden"],[59.9,10.8,"Norway"],
+			[55.7,12.6,"Denmark"],[60.2,24.9,"Finland"],[64.1,-21.9,"Iceland"],[50.1,14.4,"Czechia"],
+			[47.5,19.0,"Hungary"],[44.4,26.1,"Romania"],[52.2,21.0,"Poland"],[50.5,30.5,"Ukraine"],
+			[38.7,-9.1,"Portugal"],[38.0,23.7,"Greece"],[53.3,-6.3,"Ireland"],[55.8,37.6,"Russia"],
+			[41.0,28.9,"Turkey"],[35.7,139.7,"Japan"],[31.2,121.5,"China"],[19.1,72.9,"India"],
+			[-6.2,106.8,"Indonesia"],[37.6,127.0,"South Korea"],[13.8,100.5,"Thailand"],[10.8,106.7,"Vietnam"],
+			[14.6,121.0,"Philippines"],[3.1,101.7,"Malaysia"],[11.6,104.9,"Cambodia"],[27.7,85.3,"Nepal"],
+			[6.9,79.9,"Sri Lanka"],[25.0,121.6,"Taiwan"],[24.9,67.0,"Pakistan"],[23.8,90.4,"Bangladesh"],
+			[-33.9,151.2,"Australia"],[-36.8,174.8,"New Zealand"],[43.7,-79.4,"Canada"],[19.4,-99.1,"Mexico"],
+			[-23.5,-46.6,"Brazil"],[-34.6,-58.4,"Argentina"],[4.7,-74.1,"Colombia"],[-12.0,-77.0,"Peru"],
+			[-33.4,-70.7,"Chile"],[10.5,-66.9,"Venezuela"],[23.1,-82.4,"Cuba"],[-26.2,28.0,"South Africa"],
+			[6.5,3.4,"Nigeria"],[-1.3,36.8,"Kenya"],[9.0,38.7,"Ethiopia"],[5.6,-0.2,"Ghana"],
+			[-6.8,39.3,"Tanzania"],[30.0,31.2,"Egypt"],[33.6,-7.6,"Morocco"],[24.7,46.7,"Saudi Arabia"],
+			[25.2,55.3,"United Arab Emirates"],[25.3,51.5,"Qatar"],[32.1,34.8,"Israel"],[31.9,35.9,"Jordan"],
+			[33.9,35.5,"Lebanon"],[35.7,51.4,"Iran"],[33.3,44.4,"Iraq"]
+		];
+		const LOCATIONS = CITY_DATA.concat(NATION_DATA);
+		const CITIES = LOCATIONS.map(l => [l[0], l[1]]);
+		const CITY_NAMES = LOCATIONS.map(l => l[2]);
+		let landPix = null; // list of land-pixel indices from an equirectangular ocean/land map
+
+		// targets live on a unit sphere; the vertex shader scales by u_radius
+		function latLonToXYZ(lat, lon, out, o) {
+			const la = lat * Math.PI / 180, lo = lon * Math.PI / 180;
+			out[o + 0] = Math.cos(la) * Math.cos(lo);
+			out[o + 1] = Math.sin(la);
+			out[o + 2] = -Math.cos(la) * Math.sin(lo);
+		}
+
+		function fillTargets(targets, count) {
+			for (let i = 0; i < count; i++) {
+				if (i % 7 === 0) {
+					// city cluster with a little spread
+					const c = CITIES[(i / 7) % CITIES.length | 0];
+					const j = () => (Math.random() + Math.random() - 1) * 1.0;
+					latLonToXYZ(c[0] + j(), c[1] + j(), targets, i * 3);
+				} else if (landPix) {
+					// pick a real land pixel; accept with cos(lat) so density is
+					// uniform per surface area (equirect pixels shrink toward poles)
+					const { pix, coast, w, h } = landPix;
+					// spend most points on the coastline so the outline stays sharp,
+					// the rest fill the interior like inland city lights
+					const src = (coast.length && Math.random() < 0.6) ? coast : pix;
+					let x = 0, y = 0;
+					for (let k = 0; k < 40; k++) {
+						const p = src[(Math.random() * src.length) | 0];
+						x = p % w; y = (p / w) | 0;
+						const lat = 90 - (y + 0.5) / h * 180;
+						if (Math.random() < Math.cos(lat * Math.PI / 180)) break;
+					}
+					const lat = 90 - (y + Math.random()) / h * 180;
+					const lon = (x + Math.random()) / w * 360 - 180;
+					latLonToXYZ(lat, lon, targets, i * 3);
+				} else {
+					// mask not loaded yet: uniform sphere fallback
+					const u = Math.random() * 2 - 1;
+					const phi = Math.random() * Math.PI * 2;
+					const ring = Math.sqrt(1 - u * u);
+					targets[i * 3 + 0] = ring * Math.cos(phi);
+					targets[i * 3 + 1] = u;
+					targets[i * 3 + 2] = ring * Math.sin(phi);
+				}
+			}
+		}
+
+		const earthImg = new Image();
+		earthImg.crossOrigin = "anonymous";
+		earthImg.src = "https://cdn.jsdelivr.net/gh/mrdoob/three.js@r169/examples/textures/planets/earth_specular_2048.jpg";
+		earthImg.onload = () => {
+			const w = 1024, h = 512;
+			const c = document.createElement("canvas");
+			c.width = w; c.height = h;
+			const g = c.getContext("2d", { willReadFrequently: true });
+			g.drawImage(earthImg, 0, 0, w, h);
+			const data = g.getImageData(0, 0, w, h).data;
+			const isLand = new Uint8Array(w * h);
+			for (let p = 0; p < w * h; p++) isLand[p] = data[p * 4] < 90 ? 1 : 0; // specular: ocean bright, land dark
+			// coast = land pixels touching ocean; concentrating particles here keeps
+			// continent silhouettes readable even when the total point count is low
+			const pix = [], coast = [];
+			for (let p = 0; p < w * h; p++) {
+				if (!isLand[p]) continue;
+				pix.push(p);
+				const x = p % w, y = (p / w) | 0;
+				const l = x > 0 ? p - 1 : p + w - 1;      // wrap longitude
+				const r = x < w - 1 ? p + 1 : p - w + 1;
+				const u = y > 0 ? p - w : p;
+				const d = y < h - 1 ? p + w : p;
+				if (!isLand[l] || !isLand[r] || !isLand[u] || !isLand[d]) coast.push(p);
+			}
+			landPix = { pix, coast, w, h };
+			const attr = particles.points.geometry.getAttribute("aTarget");
+			fillTargets(attr.array, attr.count);
+			attr.needsUpdate = true;
+		};
+
+		// --- particles ---------------------------------------------------
+		function buildParticles() {
+			const COUNT = Math.max(config.introCount, config.globeCount);
+			const positions = new Float32Array(COUNT * 3);
+			const targets = new Float32Array(COUNT * 3);   // globe surface positions
+			const seeds = new Float32Array(COUNT);
+			const flake = new Float32Array(COUNT);
+			const speed = new Float32Array(COUNT);
+			const city = new Float32Array(COUNT);   // which CITIES index this particle belongs to (-1 = none)
+			const vis = new Float32Array(COUNT * 2); // x: visible in drift intro, y: visible on the globe
+			for (let i = 0; i < COUNT; i++) {
+				vis[i * 2 + 0] = i < config.introCount ? 1.0 : 0.0;
+				vis[i * 2 + 1] = i < config.globeCount ? 1.0 : 0.0;
+				// tall column: radial spread in x/z (gives depth), filled uniformly in y
+				const r = 1.6 + Math.random() * 8.0;
+				const theta = Math.random() * Math.PI * 2;
+				const z = r * Math.sin(theta);
+				positions[i * 3 + 0] = r * Math.cos(theta);
+				positions[i * 3 + 1] = (Math.random() - 0.5) * FIELD_H;   // fill the whole wrap height
+				positions[i * 3 + 2] = z;
+				seeds[i] = Math.random();
+				// mirror fillTargets: every 7th particle is a city cluster
+				city[i] = (i % 7 === 0) ? ((i / 7) % CITIES.length) : -1;
+				flake[i] = Math.random() < 0.18 ? 1.0 : 0.0;
+				// parallax: nearer the camera (higher z) = faster upward travel
+				const depthNorm = (z + 9.6) / 19.2;               // 0 far … 1 near
+				speed[i] = 0.35 + depthNorm * depthNorm * 1.25;   // eased so near particles pull ahead
+			}
+			fillTargets(targets, COUNT);
+			const geo = new THREE.BufferGeometry();
+			geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+			geo.setAttribute("aTarget", new THREE.BufferAttribute(targets, 3));
+			geo.setAttribute("aSeed", new THREE.BufferAttribute(seeds, 1));
+			geo.setAttribute("aFlake", new THREE.BufferAttribute(flake, 1));
+			geo.setAttribute("aSpeed", new THREE.BufferAttribute(speed, 1));
+			geo.setAttribute("aCity", new THREE.BufferAttribute(city, 1));
+			geo.setAttribute("aVis", new THREE.BufferAttribute(vis, 2));
+
+			const mat = new THREE.ShaderMaterial({
+				transparent: true,
+				depthWrite: false,
+				blending: THREE.AdditiveBlending,
+				uniforms: {
+					u_time: { value: 0 },
+					u_size: { value: config.particleSize * renderer.getPixelRatio() },
+					u_shape: { value: config.shape },
+					u_scroll: { value: 0 },
+					u_morph: { value: 0 },
+					u_spin: { value: 0 },
+					u_radius: { value: config.globeRadius },
+					u_boost: { value: config.brightness },
+					u_fieldH: { value: FIELD_H },
+					u_colorA: { value: new THREE.Color(config.colorA) },
+					u_colorB: { value: new THREE.Color(config.colorB) },
+					// x = selected-glow, y = hover-dim, packed to halve uniform slots
+					u_cityFx: { value: new Float32Array(CITIES.length * 2) },
+					u_hoverAll: { value: 0 },
+					u_pulse: { value: config.cityPulse }
+				},
+				vertexShader: `
+					uniform float u_time;
+					uniform float u_size;
+					uniform float u_scroll;
+					uniform float u_morph;
+					uniform float u_spin;
+					uniform float u_radius;
+					uniform float u_boost;
+					uniform float u_fieldH;
+					uniform vec2 u_cityFx[${CITIES.length}];
+					uniform float u_hoverAll;
+					uniform float u_pulse;
+					attribute vec3 aTarget;
+					attribute float aSeed;
+					attribute vec2 aVis;
+					attribute float aFlake;
+					attribute float aSpeed;
+					attribute float aCity;
+					varying float vFade;
+					varying float vFlake;
+					varying float vGlint;
+					varying float vSeed;
+					varying float vFront;
+					varying float vMorph;
+					varying float vGlow;
+					void main() {
+						vSeed = aSeed;
+						vMorph = u_morph;
+						// selected-city highlight, only meaningful once the globe forms
+						float cityGlow = aCity < -0.5 ? 0.0 : u_cityFx[int(max(aCity, 0.0) + 0.5)].x;
+						vGlow = cityGlow * u_morph;
+						vec3 p = position;
+						// scroll-driven upward parallax: nearer particles travel faster,
+						// wrapped within the field height so the flow is continuous
+						p.y += u_scroll * aSpeed;
+						p.y = mod(p.y + u_fieldH * 0.5, u_fieldH) - u_fieldH * 0.5;
+						float t = u_time * (0.12 + aSeed * 0.4);
+						p.x += sin(t + aSeed * 6.28) * 0.6;
+						p.y += cos(t * 0.7 + aSeed * 6.28) * 0.45 + sin(u_time * 0.08 + aSeed * 3.0) * 0.3;
+						p.z += sin(t * 0.9 + aSeed * 4.0) * 0.6;
+						// scroll morph: gather onto a slowly spinning globe
+						float spin = u_spin;
+						float cs = cos(spin), sn = sin(spin);
+						vec3 gp = aTarget * u_radius;
+						gp.xz = mat2(cs, -sn, sn, cs) * gp.xz;
+						p = mix(p, gp, u_morph);
+						// hide the far hemisphere once formed — otherwise back-side land
+						// shines through the oceans and the continents turn to mush
+						vFront = mix(1.0, smoothstep(-0.05, 0.45, gp.z / length(gp)) * u_boost, u_morph);
+						// cross-fade between the drift-intro set and the globe set
+						vFront *= mix(aVis.x, aVis.y, smoothstep(0.0, 0.6, u_morph));
+						// hovering a city: other cities drop to a quarter, non-city land to half
+						float dim = aCity < -0.5 ? 0.5 * u_hoverAll : 0.75 * u_cityFx[int(max(aCity, 0.0) + 0.5)].y;
+						vFront *= 1.0 - dim;
+						// only user-selected cities pulse (vGlow gates amplitude + morph)
+						float pulse = 1.0 + u_pulse * vGlow * sin(u_time * 24.0 + aCity * 2.4);
+						vFront *= pulse;
+						vec4 mv = modelViewMatrix * vec4(p, 1.0);
+						vFade = clamp((-mv.z) / 16.0, 0.0, 1.0);
+						vFlake = aFlake;
+						// selected cities flutter at 2x speed
+						float ft = u_time * (1.0 + vGlow);
+						float g = sin(ft * (2.0 + aSeed * 5.0) + aSeed * 40.0);
+						vGlint = aFlake * pow(max(g, 0.0), 8.0);
+						gl_Position = projectionMatrix * mv;
+						float twinkle = 0.5 + 0.5 * sin(ft * (1.0 + aSeed * 3.0) + aSeed * 30.0);
+						float baseSize = mix(0.35, 1.4, aSeed) * mix(0.8, 1.6, aFlake);
+						// calmer glints but bigger, hotter points on the formed globe
+						gl_PointSize = u_size * baseSize * (twinkle * 0.6 + 0.4 + vGlint * 1.6 * (1.0 - u_morph * 0.7))
+							* mix(1.0, 1.5, u_morph) * (1.0 + vGlow * 2.0) * pulse / max(1.0, -mv.z);
+					}
+				`,
+				fragmentShader: `
+					uniform vec3 u_colorA;
+					uniform vec3 u_colorB;
+					uniform float u_shape;
+					varying float vFade;
+					varying float vFlake;
+					varying float vGlint;
+					varying float vSeed;
+					varying float vFront;
+					varying float vMorph;
+					varying float vGlow;
+					void main() {
+						vec2 uv = gl_PointCoord - 0.5;
+						// fade out before the sprite's square boundary so bright/bloomed
+						// particles never reveal the underlying quad
+						float rim = 1.0 - smoothstep(0.14, 0.24, dot(uv, uv));
+						// break the perfect circle: modulate radius by angle so each
+						// particle reads as an irregular flake rather than a synthetic dot
+						float ang = atan(uv.y, uv.x) + vSeed * 6.2831;
+						float m = 1.0
+							+ 0.22 * sin(ang * 3.0 + vSeed * 41.0)
+							+ 0.14 * sin(ang * 5.0 - vSeed * 17.0)
+							+ 0.08 * sin(ang * 8.0 + vSeed * 7.0);
+						m = mix(1.0, m, u_shape);          // u_shape 0 = round, 1 = jagged
+						uv /= max(m, 0.35);
+						float d = dot(uv, uv);
+						float sharp = mix(7.0, 26.0, vFlake);
+						float soft = exp(-d * sharp);
+						float core = exp(-d * 80.0);
+						if (vMorph < 0.05 && soft < 0.02 && core < 0.02) discard;
+						vec3 col = mix(u_colorA, u_colorB, clamp(vFlake * 0.5 + vGlint + core, 0.0, 1.0));
+						// on the formed globe (vFront > 1 on the lit side) warm the dots
+						// toward gold so land reads like city lights at night
+						col = mix(col, u_colorB, clamp(vFront - 1.0, 0.0, 0.75));
+						float a = soft * (0.22 + vFade * 0.6) + core * (0.4 + vGlint * 0.6);
+						a *= (0.6 + vFade * 0.6);
+						a *= vFront * rim;
+						// in-sprite halo on the formed globe: round, artifact-free glow that
+						// replaces most of what the (block-prone) bloom pass was doing
+						a += exp(-d * 3.0) * 0.10 * (1.0 + vGlow) * vMorph * rim * clamp(vFront, 0.0, 1.5);
+						// selected city: brighter core + wider halo, same gold as the rest
+						a += (core * 1.6 + exp(-d * 2.5) * 0.3) * vGlow * rim;
+						gl_FragColor = vec4(col, a);
+					}
+				`
+			});
+
+			const points = new THREE.Points(geo, mat);
+			scene.add(points);
+			return { points, mat };
+		}
+		let particles = buildParticles();
+
+		// --- radar rings: expanding pings on the selected cities -----------
+		const radar = (() => {
+			const geo = new THREE.BufferGeometry();
+			geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(CITIES.length * 3), 3));
+			geo.setDrawRange(0, 0);
+			const mat = new THREE.ShaderMaterial({
+				transparent: true,
+				depthWrite: false,
+				blending: THREE.AdditiveBlending,
+				uniforms: {
+					u_time: { value: 0 },
+					u_spin: { value: 0 },
+					u_radius: { value: config.globeRadius },
+					u_morph: { value: 0 },
+					u_strength: { value: config.cityRadar },
+					u_speed: { value: config.radarSpeed },
+					u_style: { value: config.radarStyle },
+					u_size: { value: config.radarSize * renderer.getPixelRatio() },
+					u_color: { value: new THREE.Color(config.radarColor) }
+				},
+				vertexShader: `
+					uniform float u_spin;
+					uniform float u_radius;
+					uniform float u_size;
+					varying float vFront;
+					void main() {
+						float cs = cos(u_spin), sn = sin(u_spin);
+						vec3 p = position * u_radius;
+						p.xz = mat2(cs, -sn, sn, cs) * p.xz;
+						vFront = smoothstep(0.0, 0.35, p.z / u_radius);   // hide behind the globe
+						vec4 mv = modelViewMatrix * vec4(p, 1.0);
+						gl_Position = projectionMatrix * mv;
+						gl_PointSize = u_size / max(1.0, -mv.z);
+					}
+				`,
+				fragmentShader: `
+					uniform float u_time;
+					uniform float u_morph;
+					uniform float u_strength;
+					uniform float u_speed;
+					uniform int u_style;
+					uniform vec3 u_color;
+					varying float vFront;
+					void main() {
+						vec2 uv = gl_PointCoord - 0.5;
+						float r = length(uv) * 2.0;
+						float a = 0.0;
+						if (u_style == 0) {
+							// two expanding rings half a cycle apart — radar ping
+							for (int k = 0; k < 2; k++) {
+								float t = fract(u_time * u_speed + float(k) * 0.5);
+								a += smoothstep(0.08, 0.0, abs(r - t * 0.9)) * (1.0 - t);
+							}
+						} else if (u_style == 1) {
+							// rotating beam with a trailing glow inside a fixed ring
+							float sweep = pow(fract(atan(uv.y, uv.x) / 6.2831853 - u_time * u_speed), 8.0);
+							a += sweep * smoothstep(0.9, 0.8, r) * 0.8;
+							a += smoothstep(0.04, 0.0, abs(r - 0.85)) * 0.5;
+						} else {
+							// crosshair: fixed ring + axis lines + a slow ping for life
+							a += smoothstep(0.035, 0.0, abs(r - 0.55)) * 0.8;
+							a += smoothstep(0.02, 0.0, min(abs(uv.x), abs(uv.y))) * smoothstep(0.85, 0.8, r) * 0.6;
+							float t = fract(u_time * u_speed);
+							a += smoothstep(0.06, 0.0, abs(r - t * 0.9)) * (1.0 - t) * 0.5;
+						}
+						a *= u_strength * vFront * smoothstep(0.5, 1.0, u_morph);
+						gl_FragColor = vec4(u_color, a);
+					}
+				`
+			});
+			const points = new THREE.Points(geo, mat);
+			points.frustumCulled = false;
+			points.visible = false;
+			scene.add(points);
+			return { points, mat, geo };
+		})();
+		function syncRadar() {
+			const attr = radar.geo.getAttribute("position");
+			let n = 0;
+			selectedCities.forEach(i => { latLonToXYZ(CITIES[i][0], CITIES[i][1], attr.array, (n++) * 3); });
+			attr.needsUpdate = true;
+			radar.geo.setDrawRange(0, n);
+			radar.points.visible = n > 0;
+		}
+
+		// --- post-processing: bloom + chromatic vignette ("edge distort") ---
+		const composer = new EffectComposer(
+			renderer,
+			new THREE.WebGLRenderTarget(window.innerWidth, window.innerHeight, {
+				type: THREE.HalfFloatType,
+				samples: isMobile ? 0 : 4
+			})
+		);
+		composer.addPass(new RenderPass(scene, camera));
+
+		const bloomPass = new UnrealBloomPass(
+			new THREE.Vector2(window.innerWidth, window.innerHeight),
+			config.bloom, config.bloomRadius, config.bloomThreshold
+		);
+		composer.addPass(bloomPass);
+
+		const gradePass = new ShaderPass({
+			uniforms: {
+				tDiffuse: { value: null },
+				uTime: { value: 0 },
+				uGrain: { value: config.grain },
+				uChroma: { value: config.chroma },
+				uAspect: { value: window.innerWidth / window.innerHeight }
+			},
+			vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+			fragmentShader: `
+				uniform sampler2D tDiffuse;
+				uniform float uTime, uGrain, uChroma, uAspect;
+				varying vec2 vUv;
+				float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+				void main(){
+					vec2 uv = vUv;
+					vec2 d = uv - 0.5;
+					float r2 = dot(d, d);
+					vec2 off = d * r2 * uChroma;
+					vec3 col;
+					col.r = texture2D(tDiffuse, uv + off).r;
+					col.g = texture2D(tDiffuse, uv).g;
+					col.b = texture2D(tDiffuse, uv - off).b;
+					col *= smoothstep(1.15, 0.35, length(d * vec2(uAspect, 1.0)));
+					float g = hash(uv * vec2(1920.0, 1080.0) + uTime) - 0.5;
+					float lum = dot(col, vec3(0.299, 0.587, 0.114));
+					col += g * uGrain * (1.0 - smoothstep(0.25, 0.9, lum));
+					gl_FragColor = vec4(col, 1.0);
+				}
+			`
+		});
+		composer.addPass(gradePass);
+		composer.addPass(new OutputPass());
+
+		// --- render loop -------------------------------------------------
+		const clock = new THREE.Clock();
+		let lastElapsed = 0;
+		let rafId = null;
+		let metricFrames = 0, metricLast = 0;
+		const metricEls = {
+			scroll: document.getElementById("m-scroll"),
+			globe: document.getElementById("m-globe"),
+			fps: document.getElementById("m-fps"),
+			visible: document.getElementById("m-visible")
+		};
+		function tick() {
+			const t = clock.getElapsedTime();
+			const dt = Math.min(0.05, t - lastElapsed);
+			lastElapsed = t;
+			// flutter wakes up automatically once the globe forms
+			flakeTime += dt * Math.max(config.glowSpeed, easedMorph * config.autoFlutter);
+
+			pointer.x += (pointer.tx - pointer.x) * 0.05;
+			pointer.y += (pointer.ty - pointer.y) * 0.05;
+
+			const targetRise = scrollProgress * config.scrollRise;
+			easedScroll += (targetRise - easedScroll) * 0.08;
+
+			// globe assembles between morphStart and morphEnd of the page scroll
+			const span = Math.max(0.001, config.morphEnd - config.morphStart);
+			let m = Math.min(1, Math.max(0, (scrollProgress - config.morphStart) / span));
+			m = m * m * (3 - 2 * m);
+			easedMorph += (m - easedMorph) * 0.06;
+
+			particles.mat.uniforms.u_time.value = flakeTime;
+			particles.mat.uniforms.u_scroll.value = easedScroll;
+			particles.mat.uniforms.u_morph.value = easedMorph;
+			// slow real-time spin, offset so the Africa/Eurasia face greets
+			// the camera when the globe first forms
+			particles.mat.uniforms.u_spin.value = t * config.spinSpeed + easedScroll * 0.01 + 2.9 + dragSpin;
+			particles.mat.uniforms.u_radius.value = config.globeRadius;
+			particles.mat.uniforms.u_boost.value = config.brightness;
+			// ease the hover dim in/out instead of snapping
+			const fxArr = particles.mat.uniforms.u_cityFx.value;
+			for (let i = 0; i < CITIES.length; i++) {
+				const target = (hoverCity >= 0 && i !== hoverCity) ? 1 : 0;
+				fxArr[i * 2 + 1] += (target - fxArr[i * 2 + 1]) * 0.08;
+			}
+			const all = particles.mat.uniforms.u_hoverAll;
+			all.value += ((hoverCity >= 0 ? 1 : 0) - all.value) * 0.08;
+			particles.mat.uniforms.u_pulse.value = config.cityPulse;
+			radar.mat.uniforms.u_time.value = t;
+			radar.mat.uniforms.u_spin.value = particles.mat.uniforms.u_spin.value;
+			radar.mat.uniforms.u_radius.value = config.globeRadius;
+			radar.mat.uniforms.u_morph.value = easedMorph;
+			radar.mat.uniforms.u_strength.value = config.cityRadar;
+			// extra glow once the globe is formed — city-lights look
+			bloomPass.strength = config.bloom + easedMorph * config.bloomBoost;
+			bloomPass.radius = config.bloomRadius;
+			bloomPass.threshold = config.bloomThreshold;
+			gradePass.uniforms.uChroma.value = config.chroma;
+			gradePass.uniforms.uGrain.value = config.grain;
+
+			// metrics readout, ~4x/sec
+			metricFrames++;
+			if (t - metricLast >= 0.25) {
+				const fps = metricFrames / (t - metricLast);
+				const visFade = Math.min(1, easedMorph / 0.6);
+				const visible = config.introCount * (1 - visFade) + config.globeCount * visFade;
+				metricEls.scroll.textContent = (scrollProgress * 100).toFixed(0) + "%";
+				metricEls.globe.textContent = (easedMorph * 100).toFixed(0) + "%";
+				metricEls.fps.textContent = fps.toFixed(0);
+				metricEls.visible.textContent = Math.round(visible);
+				metricLast = t;
+				metricFrames = 0;
+			}
+
+			camera.position.z = config.cameraDist;
+			camera.position.x = -pointer.x * 0.6;
+			camera.position.y = 0.3 - pointer.y * 0.4;
+			camera.lookAt(0, 0, 0);
+
+			gradePass.uniforms.uTime.value = t;
+
+			composer.render();
+			rafId = requestAnimationFrame(tick);
+		}
+
+		// --- events ------------------------------------------------------
+		window.addEventListener("scroll", readScroll, { passive: true });
+
+		document.addEventListener("visibilitychange", () => {
+			if (document.hidden) {
+				if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
+			} else if (rafId === null) {
+				lastElapsed = clock.getElapsedTime();
+				rafId = requestAnimationFrame(tick);
+			}
+		});
+
+		window.addEventListener("resize", () => {
+			const w = window.innerWidth, h = window.innerHeight;
+			camera.aspect = w / h;
+			camera.updateProjectionMatrix();
+			renderer.setSize(w, h);
+			composer.setSize(w, h);
+			bloomPass.setSize(w, h);
+			gradePass.uniforms.uAspect.value = w / h;
+			particles.mat.uniforms.u_size.value = config.particleSize * renderer.getPixelRatio();
+			radar.mat.uniforms.u_size.value = config.radarSize * renderer.getPixelRatio();
+			readScroll();
+		});
+
+		window.addEventListener("pointermove", (e) => {
+			pointer.tx = (e.clientX / window.innerWidth) * 2 - 1;
+			pointer.ty = -((e.clientY / window.innerHeight) * 2 - 1);
+		}, { passive: true });
+
+		// --- drag to turn + hover city labels (desktop only) -------------
+		// touch devices scroll the page to drive the globe, so leave them alone
+		if (!isMobile) {
+			const label = document.createElement("div");
+			label.style.cssText =
+				"position:fixed;z-index:9;pointer-events:none;opacity:0;" +
+				"transform:translate(4px,-50%);font:11px/1 ui-monospace,Menlo,monospace;" +
+				"color:#ffd49a;text-shadow:0 0 6px rgba(0,0,0,0.9);white-space:nowrap;";
+			document.body.appendChild(label);
+			function moveLabel(sx, sy) {
+				// ease position only while visible — a hidden label snaps into
+				// place so it doesn't fly across the screen to the next city
+				label.style.transition = label.style.opacity === "1"
+					? "opacity .2s ease, transform .2s ease, left .12s ease-out, top .12s ease-out"
+					: "opacity .2s ease, transform .2s ease";
+				label.style.left = sx + "px";
+				label.style.top = sy + "px";
+			}
+			function showLabel(text, sx, sy) {
+				moveLabel(sx, sy);
+				label.textContent = text;
+				label.style.opacity = "1";
+				label.style.transform = "translate(10px,-50%)";
+			}
+			function hideLabel() {
+				label.style.opacity = "0";
+				label.style.transform = "translate(4px,-50%)";
+			}
+
+			const YAXIS = new THREE.Vector3(0, 1, 0);
+			const v = new THREE.Vector3();
+			const tmp = [0, 0, 0];
+
+			// project the user-selected cities, find the front-facing one nearest
+			// the cursor. spin matches the vertex shader's Y rotation of the globe.
+			function updateLabel(mx, my) {
+				if (easedMorph < 0.5) { hideLabel(); hoverCity = -1; return; }
+				const spin = particles.mat.uniforms.u_spin.value;
+				const r = config.globeRadius;
+				const w = window.innerWidth, h = window.innerHeight;
+				let best = null, bestD = 42 * 42; // px² pick radius
+				for (let i = 0; i < CITIES.length; i++) {
+					if (!selectedCities.has(i)) continue;   // hover only reacts to user-selected cities
+					const c = CITIES[i];
+					latLonToXYZ(c[0], c[1], tmp, 0);
+					v.set(tmp[0], tmp[1], tmp[2]).multiplyScalar(r).applyAxisAngle(YAXIS, spin);
+					if (v.z <= 0) continue;              // back hemisphere — hidden
+					v.project(camera);
+					const sx = (v.x * 0.5 + 0.5) * w;
+					const sy = (-v.y * 0.5 + 0.5) * h;
+					const dx = sx - mx, dy = sy - my;
+					const d = dx * dx + dy * dy;
+					if (d < bestD) { bestD = d; best = { i, sx, sy }; }
+				}
+				if (best) {
+					showLabel(CITY_NAMES[best.i], best.sx, best.sy);
+					hoverCity = best.i;
+				} else {
+					hideLabel();
+					hoverCity = -1;
+				}
+			}
+
+			let dragging = false, lastX = 0;
+			canvas.style.cursor = "grab";
+			canvas.addEventListener("pointerdown", (e) => {
+				dragging = true; lastX = e.clientX;
+				canvas.style.cursor = "grabbing";
+				hideLabel();
+				hoverCity = -1;
+				canvas.setPointerCapture(e.pointerId);
+			});
+			canvas.addEventListener("pointerup", (e) => {
+				dragging = false;
+				canvas.style.cursor = "grab";
+				canvas.releasePointerCapture(e.pointerId);
+			});
+			canvas.addEventListener("pointermove", (e) => {
+				if (dragging) {
+					dragSpin += (e.clientX - lastX) * 0.005; // drag right → turn east
+					lastX = e.clientX;
+				} else {
+					updateLabel(e.clientX, e.clientY);
+				}
+			});
+		}
+
+		// --- controls ----------------------------------------------------
+		const exportSettings = () => ({ ...config, cities: [...selectedCities].map(i => CITY_NAMES[i]) });
+		function saveSettings() {
+			try { localStorage.setItem(STORE_KEY, JSON.stringify(exportSettings())); } catch {}
+		}
+
+		// push every config value that isn't already applied per-frame in tick()
+		// into the scene — used at startup, by handlers, and after an import
+		function applyLook() {
+			particles.mat.uniforms.u_colorA.value.set(config.colorA);
+			particles.mat.uniforms.u_colorB.value.set(config.colorB);
+			particles.mat.uniforms.u_size.value = config.particleSize * renderer.getPixelRatio();
+			particles.mat.uniforms.u_shape.value = config.shape;
+			radar.mat.uniforms.u_color.value.set(config.radarColor);
+			radar.mat.uniforms.u_speed.value = config.radarSpeed;
+			radar.mat.uniforms.u_style.value = config.radarStyle;
+			radar.mat.uniforms.u_size.value = config.radarSize * renderer.getPixelRatio();
+			renderer.setClearColor(config.background);
+			document.body.style.background = config.background;
+			document.querySelector(".scroll-track").style.height = config.scrollLen + "vh";
+			readScroll();
+		}
+
+		function rebuildParticles() {
+			scene.remove(particles.points);
+			particles.points.geometry.dispose();
+			particles.mat.dispose();
+			particles = buildParticles();
+			// fresh material resets the glow array — reapply current selections
+			selectedCities.forEach(i => { particles.mat.uniforms.u_cityFx.value[i * 2] = 1; });
+		}
+
+		function bind(id, valId, fmt, onInput) {
+			const el = document.getElementById(id);
+			const out = document.getElementById(valId);
+			const render = () => { out.textContent = fmt(parseFloat(el.value)); };
+			el.addEventListener("input", () => { onInput(parseFloat(el.value)); render(); saveSettings(); });
+			return { el, render };
+		}
+
+		function bindColor(id, key) {
+			const el = document.getElementById(id);
+			el.addEventListener("input", () => { config[key] = el.value; applyLook(); saveSettings(); });
+			return el;
+		}
+		const colA = bindColor("c-cola", "colorA");
+		const colB = bindColor("c-colb", "colorB");
+		const colR = bindColor("c-colr", "radarColor");
+		const colBg = bindColor("c-colbg", "background");
+
+		const ctrlCount = bind("c-count", "v-count", v => v, v => {
+			config.introCount = v;
+			rebuildParticles();
+		});
+		const ctrlGcount = bind("c-gcount", "v-gcount", v => v, v => {
+			config.globeCount = v;
+			rebuildParticles();
+		});
+		const ctrlSize = bind("c-size", "v-size", v => v, v => {
+			config.particleSize = v;
+			particles.mat.uniforms.u_size.value = v * renderer.getPixelRatio();
+		});
+		const ctrlShape = bind("c-shape", "v-shape", v => v.toFixed(2), v => {
+			config.shape = v;
+			particles.mat.uniforms.u_shape.value = v;
+		});
+		const ctrlSpeed = bind("c-speed", "v-speed", v => v.toFixed(2), v => {
+			config.glowSpeed = v;
+		});
+		const ctrlCam = bind("c-cam", "v-cam", v => v.toFixed(1), v => { config.cameraDist = v; });
+		const ctrlSlen = bind("c-slen", "v-slen", v => v + "vh", v => {
+			config.scrollLen = v;
+			applyLook();   // resizes the scroll track + re-reads scroll
+		});
+		const ctrlRise = bind("c-rise", "v-rise", v => v, v => { config.scrollRise = v; });
+		const ctrlStart = bind("c-start", "v-start", v => v.toFixed(2), v => {
+			config.morphStart = v;
+		});
+		const ctrlEnd = bind("c-end", "v-end", v => v.toFixed(2), v => {
+			config.morphEnd = v;
+		});
+		// these all apply per-frame in tick(), so the handler only stores the value
+		const ctrlRadius = bind("c-radius", "v-radius", v => v.toFixed(2), v => { config.globeRadius = v; });
+		const ctrlBright = bind("c-bright", "v-bright", v => v.toFixed(1), v => { config.brightness = v; });
+		const ctrlSpin = bind("c-spin", "v-spin", v => v.toFixed(3), v => { config.spinSpeed = v; });
+		const ctrlAflutter = bind("c-aflutter", "v-aflutter", v => v.toFixed(2), v => { config.autoFlutter = v; });
+		const ctrlBloom = bind("c-bloom", "v-bloom", v => v.toFixed(2), v => { config.bloom = v; });
+		const ctrlBurn = bind("c-burn", "v-burn", v => v.toFixed(2), v => { config.bloomBoost = v; });
+		const ctrlBradius = bind("c-bradius", "v-bradius", v => v.toFixed(2), v => { config.bloomRadius = v; });
+		const ctrlBcut = bind("c-bcut", "v-bcut", v => v.toFixed(2), v => { config.bloomThreshold = v; });
+		const ctrlPulse = bind("c-pulse", "v-pulse", v => v.toFixed(2), v => { config.cityPulse = v; });
+		const ctrlRadar = bind("c-radar", "v-radar", v => v.toFixed(2), v => { config.cityRadar = v; });
+		// radar material never rebuilds, so these can poke uniforms directly
+		const ctrlRspeed = bind("c-rspeed", "v-rspeed", v => v.toFixed(2), v => {
+			config.radarSpeed = v;
+			radar.mat.uniforms.u_speed.value = v;
+		});
+		const ctrlRsize = bind("c-rsize", "v-rsize", v => v, v => {
+			config.radarSize = v;
+			radar.mat.uniforms.u_size.value = v * renderer.getPixelRatio();
+		});
+		const radarStyleSel = document.getElementById("c-rstyle");
+		radarStyleSel.addEventListener("input", () => {
+			config.radarStyle = parseInt(radarStyleSel.value, 10);
+			radar.mat.uniforms.u_style.value = config.radarStyle;
+			saveSettings();
+		});
+		const ctrlChroma = bind("c-chroma", "v-chroma", v => v.toFixed(3), v => { config.chroma = v; });
+		const ctrlGrain = bind("c-grain", "v-grain", v => v.toFixed(3), v => { config.grain = v; });
+
+		// seed control positions + labels from config
+		function syncControls() {
+			ctrlCount.el.value = config.introCount;    ctrlCount.render();
+			ctrlGcount.el.value = config.globeCount;   ctrlGcount.render();
+			ctrlSize.el.value = config.particleSize;  ctrlSize.render();
+			ctrlShape.el.value = config.shape;         ctrlShape.render();
+			ctrlSpeed.el.value = config.glowSpeed;     ctrlSpeed.render();
+			ctrlCam.el.value = config.cameraDist;      ctrlCam.render();
+			ctrlSlen.el.value = config.scrollLen;      ctrlSlen.render();
+			ctrlRise.el.value = config.scrollRise;     ctrlRise.render();
+			ctrlStart.el.value = config.morphStart;    ctrlStart.render();
+			ctrlEnd.el.value = config.morphEnd;        ctrlEnd.render();
+			ctrlRadius.el.value = config.globeRadius;  ctrlRadius.render();
+			ctrlBright.el.value = config.brightness;   ctrlBright.render();
+			ctrlSpin.el.value = config.spinSpeed;      ctrlSpin.render();
+			ctrlAflutter.el.value = config.autoFlutter; ctrlAflutter.render();
+			ctrlBloom.el.value = config.bloom;         ctrlBloom.render();
+			ctrlBurn.el.value = config.bloomBoost;     ctrlBurn.render();
+			ctrlBradius.el.value = config.bloomRadius; ctrlBradius.render();
+			ctrlBcut.el.value = config.bloomThreshold; ctrlBcut.render();
+			ctrlPulse.el.value = config.cityPulse;     ctrlPulse.render();
+			ctrlRadar.el.value = config.cityRadar;     ctrlRadar.render();
+			ctrlRspeed.el.value = config.radarSpeed;   ctrlRspeed.render();
+			ctrlRsize.el.value = config.radarSize;     ctrlRsize.render();
+			radarStyleSel.value = config.radarStyle;
+			ctrlChroma.el.value = config.chroma;       ctrlChroma.render();
+			ctrlGrain.el.value = config.grain;         ctrlGrain.render();
+			colA.value = config.colorA;
+			colB.value = config.colorB;
+			colR.value = config.radarColor;
+			colBg.value = config.background;
+		}
+		syncControls();
+
+		// import: merge known keys, resync UI, rebuild, reselect cities
+		function applySettings(obj) {
+			for (const k in obj) if (k in config) config[k] = obj[k];
+			selectedCities.clear();
+			cityChips.innerHTML = "";
+			rebuildParticles();
+			(Array.isArray(obj.cities) ? obj.cities : []).forEach(selectCity);
+			syncRadar();
+			syncControls();
+			applyLook();
+			saveSettings();
+		}
+
+		const copyBtn = document.getElementById("copy-btn");
+		copyBtn.addEventListener("click", async () => {
+			try {
+				await navigator.clipboard.writeText(JSON.stringify(exportSettings(), null, 2));
+				copyBtn.textContent = "Copied ✓";
+			} catch {
+				copyBtn.textContent = "Copy failed";
+			}
+			setTimeout(() => { copyBtn.textContent = "Copy settings"; }, 1200);
+		});
+
+		const pasteBtn = document.getElementById("paste-btn");
+		pasteBtn.addEventListener("click", async () => {
+			let txt = "";
+			try { txt = await navigator.clipboard.readText(); } catch {}
+			try { JSON.parse(txt); } catch { txt = prompt("Paste settings JSON:") || ""; }
+			try {
+				applySettings(JSON.parse(txt));
+				pasteBtn.textContent = "Applied ✓";
+			} catch {
+				pasteBtn.textContent = "Invalid JSON";
+			}
+			setTimeout(() => { pasteBtn.textContent = "Paste settings"; }, 1200);
+		});
+
+		document.getElementById("reset-btn").addEventListener("click", () => {
+			localStorage.removeItem(STORE_KEY);
+			location.reload();
+		});
+
+		const panel = document.getElementById("panel");
+		const panelToggle = document.getElementById("panel-toggle");
+		panelToggle.addEventListener("click", () => {
+			const collapsed = panel.classList.toggle("hidden");
+			panelToggle.textContent = collapsed ? "+" : "–";
+			panelToggle.title = collapsed ? "expand" : "collapse";
+		});
+
+		// click a group header to fold/unfold its controls
+		document.querySelectorAll("#panel .group").forEach(g => {
+			g.addEventListener("click", () => {
+				const closed = g.classList.toggle("closed");
+				for (let el = g.nextElementSibling;
+					el && !el.classList.contains("group") && el.id !== "metrics";
+					el = el.nextElementSibling) {
+					el.style.display = closed ? "none" : "";
+				}
+			});
+		});
+
+		// hide the panel entirely for the published page; S brings it back
+		function setPanelHidden(hidden) {
+			panel.style.display = hidden ? "none" : "";
+			try { localStorage.setItem("globe-panel-hidden", hidden ? "1" : ""); } catch {}
+		}
+		document.getElementById("panel-hide").addEventListener("click", () => setPanelHidden(true));
+		window.addEventListener("keydown", (e) => {
+			if (e.key.toLowerCase() !== "s") return;
+			if (/INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) return;
+			setPanelHidden(panel.style.display === "none" ? false : true);
+		});
+		if (localStorage.getItem("globe-panel-hidden") === "1") setPanelHidden(true);
+
+		// --- location highlight pickers (search dropdowns + chips) --------
+		const citySearch = document.getElementById("city-search");
+		const nationSearch = document.getElementById("nation-search");
+		const cityChips = document.getElementById("city-chips");
+		function fillList(listId, data) {
+			const list = document.getElementById(listId);
+			data.forEach(l => {
+				const o = document.createElement("option");
+				o.value = l[2];
+				list.appendChild(o);
+			});
+		}
+		fillList("city-list", CITY_DATA);
+		fillList("nation-list", NATION_DATA);
+		function addChip(idx) {
+			const chip = document.createElement("span");
+			chip.className = "chip";
+			chip.textContent = CITY_NAMES[idx] + " ✕";
+			chip.title = "click to remove";
+			chip.addEventListener("click", () => {
+				selectedCities.delete(idx);
+				particles.mat.uniforms.u_cityFx.value[idx * 2] = 0;
+				syncRadar();
+				chip.remove();
+				saveSettings();
+			});
+			cityChips.appendChild(chip);
+		}
+		function selectCity(name) {
+			const q = String(name).trim().toLowerCase();
+			const idx = CITY_NAMES.findIndex(n => n.toLowerCase() === q);
+			if (idx < 0 || selectedCities.has(idx)) return;
+			selectedCities.add(idx);
+			particles.mat.uniforms.u_cityFx.value[idx * 2] = 1;
+			syncRadar();
+			addChip(idx);
+		}
+		[citySearch, nationSearch].forEach(input => {
+			input.addEventListener("change", () => {
+				selectCity(input.value);
+				input.value = "";
+				saveSettings();
+			});
+		});
+
+		if (savedSettings && Array.isArray(savedSettings.cities)) savedSettings.cities.forEach(selectCity);
+		applyLook();
+		tick();
+	})();
+	</script>
+</body>
+</html>

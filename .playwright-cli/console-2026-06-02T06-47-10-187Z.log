@@ -1,2 +1,0 @@
-[     282ms] [ERROR] Failed to load resource: the server responded with a status of 404 (File not found) @ http://127.0.0.1:5500/favicon.ico:0
-[     378ms] [WARNING] Under-particle model load failed. InvalidStateError: The source image could not be decoded. @ http://127.0.0.1:5500/index-scene.html:1736

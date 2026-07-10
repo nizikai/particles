@@ -1,0 +1,206 @@
+- generic [active] [ref=e1]:
+  - heading "We build what the internet hasn't seen before." [level=1]
+  - generic: — fps
+  - generic [ref=e3]:
+    - button "Controls" [ref=e4] [cursor=pointer]
+    - generic [ref=e5]:
+      - generic [ref=e6]:
+        - generic [ref=e7]: Ground model
+        - button "Choose File" [ref=e8] [cursor=pointer]
+        - generic [ref=e9]: Pick/drop a .glb/.gltf to replace the ground. The glass logo stays.
+      - generic [ref=e10]:
+        - generic [ref=e11]:
+          - text: Particles
+          - generic [ref=e12]: "2000"
+        - slider [ref=e13] [cursor=pointer]: "2000"
+      - generic [ref=e14]:
+        - generic [ref=e15]:
+          - text: Glow speed
+          - generic [ref=e16]: 0.30×
+        - slider [ref=e17] [cursor=pointer]: "0.3"
+      - generic [ref=e18]:
+        - generic [ref=e19]:
+          - text: Flake size
+          - generic [ref=e20]: "15"
+        - slider [ref=e21] [cursor=pointer]: "15"
+      - generic [ref=e22]:
+        - generic [ref=e23]:
+          - text: Model size
+          - generic [ref=e24]: "1.5"
+        - slider [ref=e25] [cursor=pointer]: "1.5"
+      - generic [ref=e26]:
+        - generic [ref=e27]:
+          - text: Model X
+          - generic [ref=e28]: "0.0"
+        - slider [ref=e29] [cursor=pointer]: "0"
+      - generic [ref=e30]:
+        - generic [ref=e31]:
+          - text: Model Y
+          - generic [ref=e32]: "0.3"
+        - slider [ref=e33] [cursor=pointer]: "0.3"
+      - generic [ref=e34]:
+        - generic [ref=e35]:
+          - text: Model Z
+          - generic [ref=e36]: "0.0"
+        - slider [ref=e37] [cursor=pointer]: "0"
+      - generic [ref=e38]:
+        - generic [ref=e39]:
+          - text: Camera dist
+          - generic [ref=e40]: "10.0"
+        - slider [ref=e41] [cursor=pointer]: "10"
+      - generic [ref=e42]:
+        - generic [ref=e43]:
+          - text: Depth
+          - generic [ref=e44]: "1.00"
+        - slider [ref=e45] [cursor=pointer]: "1"
+      - generic [ref=e46]:
+        - generic [ref=e47]:
+          - text: Transmission
+          - generic [ref=e48]: "1.00"
+        - slider [ref=e49] [cursor=pointer]: "1"
+      - generic [ref=e50]:
+        - generic [ref=e51]:
+          - text: Roughness
+          - generic [ref=e52]: "0.05"
+        - slider [ref=e53] [cursor=pointer]: "0.05"
+      - generic [ref=e54]:
+        - generic [ref=e55]:
+          - text: Metalness
+          - generic [ref=e56]: "0.00"
+        - slider [ref=e57] [cursor=pointer]: "0"
+      - generic [ref=e58]:
+        - generic [ref=e59]:
+          - text: IOR
+          - generic [ref=e60]: "1.80"
+        - slider [ref=e61] [cursor=pointer]: "1.8"
+      - generic [ref=e62]:
+        - generic [ref=e63]:
+          - text: Thickness
+          - generic [ref=e64]: "0.70"
+        - slider [ref=e65] [cursor=pointer]: "0.7"
+      - generic [ref=e66]:
+        - generic [ref=e67]:
+          - text: Glass chroma
+          - generic [ref=e68]: "0.120"
+        - slider [ref=e69] [cursor=pointer]: "0.12"
+      - generic [ref=e70]:
+        - generic [ref=e71]:
+          - text: Anisotropy
+          - generic [ref=e72]: "0.12"
+        - slider [ref=e73] [cursor=pointer]: "0.1"
+      - generic [ref=e74]:
+        - generic [ref=e75]:
+          - text: Clearcoat
+          - generic [ref=e76]: "1.00"
+        - slider [ref=e77] [cursor=pointer]: "1"
+      - generic [ref=e78]:
+        - generic [ref=e79]:
+          - text: Clearcoat rough
+          - generic [ref=e80]: "0.00"
+        - slider [ref=e81] [cursor=pointer]: "0"
+      - generic [ref=e82]:
+        - generic [ref=e83]:
+          - text: Env intensity
+          - generic [ref=e84]: "1.60"
+        - slider [ref=e85] [cursor=pointer]: "1.6"
+      - generic [ref=e86]:
+        - generic [ref=e87]:
+          - text: Attenuation dist
+          - generic [ref=e88]: "10.0"
+        - slider [ref=e89] [cursor=pointer]: "10"
+      - generic [ref=e90]:
+        - generic [ref=e91]:
+          - text: Rotation / scroll
+          - generic [ref=e92]: "-2.0"
+        - slider [ref=e93] [cursor=pointer]: "-2"
+      - generic [ref=e94]:
+        - generic [ref=e95]:
+          - text: Ground X
+          - generic [ref=e96]: "0.0"
+        - slider [ref=e97] [cursor=pointer]: "0"
+      - generic [ref=e98]:
+        - generic [ref=e99]:
+          - text: Ground Y
+          - generic [ref=e100]: "6.0"
+        - slider [ref=e101] [cursor=pointer]: "6"
+      - generic [ref=e102]:
+        - generic [ref=e103]:
+          - text: Ground Z
+          - generic [ref=e104]: "-3.0"
+        - slider [ref=e105] [cursor=pointer]: "-3"
+      - generic [ref=e106]:
+        - generic [ref=e107]:
+          - text: Ground size
+          - generic [ref=e108]: "1.20"
+        - slider [ref=e109] [cursor=pointer]: "1.2"
+      - generic [ref=e110]:
+        - generic [ref=e111]:
+          - text: Ground spin
+          - generic [ref=e112]: "-2.0"
+        - slider [ref=e113] [cursor=pointer]: "-2"
+      - generic [ref=e114]:
+        - generic [ref=e115]:
+          - text: Sky spin
+          - generic [ref=e116]: "-2.0"
+        - slider [ref=e117] [cursor=pointer]: "-2"
+      - generic [ref=e118]:
+        - generic [ref=e119]:
+          - text: Sky angle
+          - generic [ref=e120]: 70°
+        - slider [ref=e121] [cursor=pointer]: "70"
+      - generic [ref=e122]:
+        - generic [ref=e123]:
+          - text: Sky drift
+          - generic [ref=e124]: "0.00"
+        - slider [ref=e125] [cursor=pointer]: "0"
+      - generic [ref=e126]:
+        - generic [ref=e127]:
+          - text: Haze
+          - generic [ref=e128]: "0.05"
+        - slider [ref=e129] [cursor=pointer]: "0.05"
+      - generic [ref=e130]:
+        - generic [ref=e131]:
+          - text: Bloom
+          - generic [ref=e132]: "0.15"
+        - slider [ref=e133] [cursor=pointer]: "0.15"
+      - generic [ref=e134]:
+        - generic [ref=e135]:
+          - text: Chromatic
+          - generic [ref=e136]: "0.012"
+        - slider [ref=e137] [cursor=pointer]: "0.01"
+      - generic [ref=e138]:
+        - generic [ref=e139]:
+          - text: Grain
+          - generic [ref=e140]: "0.01"
+        - slider [ref=e141] [cursor=pointer]: "0.01"
+      - generic [ref=e142]:
+        - generic [ref=e143]:
+          - text: Outro speed
+          - generic [ref=e144]: "0.10"
+        - slider [ref=e145] [cursor=pointer]: "0.1"
+      - generic [ref=e146]:
+        - generic [ref=e147]:
+          - text: Outro start
+          - generic [ref=e148]: 525vh
+        - slider [ref=e149] [cursor=pointer]: "525"
+      - generic [ref=e150]:
+        - generic [ref=e151]:
+          - text: Track length
+          - generic [ref=e152]: 1400vh
+        - slider [ref=e153] [cursor=pointer]: "1400"
+      - generic [ref=e154]:
+        - generic [ref=e155]:
+          - text: Outro dim
+          - generic [ref=e156]: "0.50"
+        - slider [ref=e157] [cursor=pointer]: "0.5"
+      - generic [ref=e158]:
+        - generic [ref=e159]:
+          - text: Showcase start
+          - generic [ref=e160]: 650vh
+        - slider [ref=e161] [cursor=pointer]: "650"
+      - generic [ref=e162]:
+        - generic [ref=e163]:
+          - text: Showcase radius
+          - generic [ref=e164]: "4.3"
+        - slider [ref=e165] [cursor=pointer]: "4.3"
+      - button "Copy settings" [ref=e166] [cursor=pointer]
