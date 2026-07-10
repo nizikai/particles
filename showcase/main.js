@@ -13,7 +13,41 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 	const canvas = document.getElementById("webgl");
 	const noticeEl = document.getElementById("notice");
 	const fpsEl = document.getElementById("fps");
+	const preloaderEl = document.getElementById("preloader");
 	let fpsFrames = 0, fpsLast = 0;   // rolling FPS counter
+
+	// --- preloader: gate on the hero (logo/ground) + showcase (column) models,
+	// plus the webfont, so nothing pops in after the loader fades. A hard
+	// timeout guards against a stalled/failed asset trapping the user.
+	let preloaderHidden = false;
+	const PRELOAD_MIN_MS = 2000;   // keep the wordmark on screen at least this long, even on a cache-hit reload
+	const REVEAL_MS = 1300;        // iris-reveal duration; also drives the opacity-fallback transition (see tick())
+	const preloadStart = performance.now();
+	const preloadState = { logo: false, ground: false, column: false, fonts: false };
+	let revealStart = null;        // performance.now() timestamp when the reveal began; null = idle/done
+	function easeOutCubic(x) { return 1 - Math.pow(1 - x, 3); }
+	function hidePreloader() {
+		if (preloaderHidden) return;
+		preloaderHidden = true;
+		document.documentElement.classList.remove("loading");
+		preloaderEl.style.transitionDuration = REVEAL_MS + "ms";
+		preloaderEl.classList.add("hidden");
+		revealStart = performance.now();
+		setTimeout(() => preloaderEl.remove(), REVEAL_MS + 100);
+		const mark = preloaderEl.querySelector(".preloader-mark");
+		if (mark) mark.classList.add("leaving");
+		const headline = document.querySelector(".headline");
+		headline.classList.remove("pre-reveal");
+		headline.classList.add("reveal");
+	}
+	function markLoaded(key) {
+		preloadState[key] = true;
+		if (Object.values(preloadState).every(Boolean)) {
+			const wait = Math.max(0, PRELOAD_MIN_MS - (performance.now() - preloadStart));
+			setTimeout(hidePreloader, wait);
+		}
+	}
+	setTimeout(hidePreloader, 8000);
 
 	// --- scroll state -------------------------------------------------
 	let scrollProgress = 0;     // 0..1 raw from scrollbar
@@ -146,6 +180,13 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 
 	// --- renderer / scene --------------------------------------------
 	const isMobile = matchMedia("(pointer: coarse)").matches || window.innerWidth < 768;
+	if (isMobile) {
+		// narrow portrait screens have far less horizontal FOV, so the column
+		// reads as too zoomed-in at desktop scale — shrink it to fit comfortably
+		config.columnScale *= 0.5;
+		config.cardScale *= 0.625;
+		config.columnY = 0;
+	}
 	const fboScale = isMobile ? 0.5 : 1;
 
 	function getLvh() {
@@ -487,6 +528,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		geos.forEach(addSlab);
 		frameCore();
 		modelReady = true;
+		markLoaded("logo");
 	}
 
 	function addFallback() {
@@ -494,6 +536,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		addSlab(new THREE.TorusKnotGeometry(1, 0.34, 180, 32));
 		frameCore();
 		modelReady = true;
+		markLoaded("logo");
 	}
 
 	makeGLTFLoader().load(
@@ -623,9 +666,10 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 				groundReady = true;
 				applyGround();
 				URL.revokeObjectURL(url);
+				markLoaded("ground");
 			},
 			undefined,
-			(e) => { URL.revokeObjectURL(url); if (onError) onError(e); }
+			(e) => { URL.revokeObjectURL(url); if (onError) onError(e); markLoaded("ground"); }
 		);
 	}
 
@@ -767,6 +811,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 			c.textMat.map.dispose();
 			c.textMat.map = makeTextTexture(projects[i]);   // font only affects the title layer now
 		});
+		markLoaded("fonts");
 	});
 	buildShowcase();
 
@@ -986,7 +1031,8 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		columnTemplate = obj;
 		buildColumn();
 		prewarmShowcase();
-	}, undefined, () => console.warn("[column] couldn't load column.glb (serve over http)."));
+		markLoaded("column");
+	}, undefined, () => { console.warn("[column] couldn't load column.glb (serve over http)."); markLoaded("column"); });
 
 	// compile shaders + upload textures for the showcase up front (while the hero
 	// hides it) so arriving in the section doesn't hitch on the first frame
@@ -1157,6 +1203,15 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 	const clock = new THREE.Clock();
 	let lastElapsed = 0;
 	function tick() {
+		if (revealStart !== null) {
+			const rt = Math.min(1, (performance.now() - revealStart) / REVEAL_MS);
+			const pct = easeOutCubic(rt) * 100;
+			const feather = 8;   // percentage-points of soft edge
+			const g = `radial-gradient(circle farthest-corner at 50% 50%, transparent 0%, transparent ${Math.max(0, pct - feather)}%, white ${pct}%, white 100%)`;
+			preloaderEl.style.maskImage = g;
+			preloaderEl.style.webkitMaskImage = g;
+			if (rt >= 1) revealStart = null;
+		}
 		const t = clock.getElapsedTime();
 		const dt = Math.min(0.05, t - lastElapsed);
 		lastElapsed = t;
@@ -1227,15 +1282,8 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		particles.points.rotation.y = -easedProgress * Math.PI * 1.5 - t * 0.02;
 		particles.mat.uniforms.u_time.value = flakeTime;
 
-		// showcase dollies the camera back out so the front card sits comfortably in
-		// frame. Driven by the veil (easedOutro) rather than the showcase reveal, so
-		// the pull-back finishes behind full black — no zoom when the cards appear.
 		const baseZ = config.cameraDist - easedScene * 2.2 + easedOutro * 2.2;
-		// responsive: pull back far enough that the front card fits the viewport
-		// width (narrow/portrait screens need more distance). Blended in with the veil.
-		const hHalf = Math.atan(Math.tan((camera.fov * Math.PI / 180) / 2) * camera.aspect);
-		const fitZ = (3.4 * config.cardScale * 0.62) / Math.tan(hHalf) + config.cardDepth + config.showcaseRadius;
-		camera.position.z = baseZ + easedOutro * Math.max(0, fitZ - baseZ);
+		camera.position.z = baseZ;
 		camera.position.x = -pointer.x * 0.6;
 		camera.position.y = 0.3 - pointer.y * 0.4;
 		camera.lookAt(0, 0, 0);
