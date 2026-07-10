@@ -89,7 +89,50 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 				if (o.isMesh) wireframePairs.push({ mesh: o, line: makeWireframeLine(o) });
 			});
 		}
+		wireframeShards = buildWireframeShards();
 		introBloomStrength = BLOOM_BOOST;
+	}
+
+	let wireframeShards = null;   // { group, lines, labels } — disposed once the crossfade finishes (Task 3)
+
+	function makeShardLabel(text) {
+		const cv = document.createElement("canvas"); cv.width = 64; cv.height = 32;
+		const ctx = cv.getContext("2d");
+		ctx.fillStyle = "rgba(255,255,255,0.55)";
+		ctx.font = "600 20px ui-monospace, monospace";
+		ctx.textAlign = "center"; ctx.textBaseline = "middle";
+		ctx.fillText(text, 32, 16);
+		const tex = new THREE.CanvasTexture(cv);
+		const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
+		sprite.scale.set(0.4, 0.2, 1);
+		return sprite;
+	}
+
+	function buildWireframeShards() {
+		const group = new THREE.Group();
+		const lines = [];
+		const labels = [];
+		for (let i = 0; i < 4; i++) {
+			const size = 0.15 + Math.random() * 0.15;
+			const geo = new THREE.TetrahedronGeometry(size);
+			const edges = new THREE.EdgesGeometry(geo);
+			const line = new THREE.LineSegments(edges, wireframeMat);
+			const theta = Math.random() * Math.PI * 2;
+			const phi = Math.acos(2 * Math.random() - 1);
+			const r = 2.6 + Math.random() * 1.4;   // just outside the logo, well inside the ambient particle field
+			line.position.set(r * Math.sin(phi) * Math.cos(theta), r * Math.cos(phi) * 0.8, r * Math.sin(phi) * Math.sin(theta));
+			line.userData.spinAxis = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize();
+			line.userData.spinSpeed = 0.15 + Math.random() * 0.25;
+			group.add(line);
+			lines.push(line);
+
+			const label = makeShardLabel(String(10 + Math.floor(Math.random() * 89)));
+			label.position.copy(line.position).multiplyScalar(1.08);
+			group.add(label);
+			labels.push(label);
+		}
+		core.add(group);   // rides along with the logo's own transform
+		return { group, lines, labels };
 	}
 
 	// --- scroll state -------------------------------------------------
@@ -1259,6 +1302,10 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		const dt = Math.min(0.05, t - lastElapsed);
 		lastElapsed = t;
 		flakeTime += dt * config.glowSpeed;
+
+		if (wireframeShards) {
+			for (const l of wireframeShards.lines) l.rotateOnAxis(l.userData.spinAxis, l.userData.spinSpeed * dt);
+		}
 
 		const sr = config.outroStart    / config.trackHeight;
 		const cr = config.showcaseStart / config.trackHeight;
