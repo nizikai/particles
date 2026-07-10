@@ -26,6 +26,19 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 	const preloadState = { logo: false, ground: false, column: false, fonts: false };
 	let revealStart = null;        // performance.now() timestamp when the reveal began; null = idle/done
 	function easeOutCubic(x) { return 1 - Math.pow(1 - x, 3); }
+
+	// --- intro sequence: wireframe reveal that plays under the iris, then
+	// crossfades into the final rendered scene. Driven by tick(), not a
+	// separate rAF loop (see updateIntroSequence()).
+	const WIREFRAME_HOLD_MS = 900;   // how long the wireframe scene sits before crossfading
+	const CROSSFADE_MS = 900;        // wireframe fade-out + real-mesh pop-in + bloom ease-down
+	const BLOOM_BOOST = 0.7;         // bloom strength while the wireframe is glowing (config.bloom is normally 0.15)
+	let introStart = null;           // performance.now() timestamp when hidePreloader() fired; null = not started
+	let introBloomStrength = null;   // non-null overrides bloomPass.strength for the intro; null = use config.bloom
+	let crossfadeStarted = false;
+	let introDone = false;
+	const wireframeMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 1, depthWrite: false });
+	const wireframePairs = [];   // { mesh, line } — real meshes hidden + their wireframe outline, for Task 1/3
 	function hidePreloader() {
 		if (preloaderHidden) return;
 		preloaderHidden = true;
@@ -33,12 +46,14 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		preloaderEl.style.transitionDuration = REVEAL_MS + "ms";
 		preloaderEl.classList.add("hidden");
 		revealStart = performance.now();
+		introStart = revealStart;
 		setTimeout(() => preloaderEl.remove(), REVEAL_MS + 100);
 		const mark = preloaderEl.querySelector(".preloader-mark");
 		if (mark) mark.classList.add("leaving");
 		const headline = document.querySelector(".headline");
 		headline.classList.remove("pre-reveal");
 		headline.classList.add("reveal");
+		enterWireframePhase();
 	}
 	function markLoaded(key) {
 		preloadState[key] = true;
@@ -48,6 +63,34 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		}
 	}
 	setTimeout(hidePreloader, 8000);
+
+	// --- intro wireframe: glowing outline stand-ins for the logo + ground,
+	// shown while the real meshes are hidden, so the iris opens onto a
+	// "blueprint" version of the hero before it resolves into the final render.
+	// column.glb is out of scope — it's only visible later in the scroll-driven
+	// showcase section, not in the hero view this intro plays over.
+	function makeWireframeLine(mesh) {
+		const edges = new THREE.EdgesGeometry(mesh.geometry);
+		const line = new THREE.LineSegments(edges, wireframeMat);
+		// sibling of mesh (not a child) — mesh.visible = false would also hide a
+		// child, since Three.js skips an invisible object's whole subtree
+		line.position.copy(mesh.position);
+		line.quaternion.copy(mesh.quaternion);
+		line.scale.copy(mesh.scale);
+		mesh.parent.add(line);
+		mesh.visible = false;
+		return line;
+	}
+
+	function enterWireframePhase() {
+		for (const g of glassMeshes) wireframePairs.push({ mesh: g.mesh, line: makeWireframeLine(g.mesh) });
+		if (groundObj) {
+			groundObj.traverse((o) => {
+				if (o.isMesh) wireframePairs.push({ mesh: o, line: makeWireframeLine(o) });
+			});
+		}
+		introBloomStrength = BLOOM_BOOST;
+	}
 
 	// --- scroll state -------------------------------------------------
 	let scrollProgress = 0;     // 0..1 raw from scrollbar
@@ -1296,7 +1339,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		gradePass.uniforms.uGrain.value = config.grain;
 		gradePass.uniforms.uChroma.value = config.chroma;
 		gradePass.uniforms.uTime.value = t;
-		bloomPass.strength = config.bloom;
+		bloomPass.strength = introBloomStrength !== null ? introBloomStrength : config.bloom;
 		bloomPass.enabled = config.bloom > 0;
 
 		// phase switch: dark showcase vs. the original scene
