@@ -135,6 +135,44 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		return { group, lines, labels };
 	}
 
+	function finishIntroSequence() {
+		introDone = true;
+		introBloomStrength = null;
+		for (const { mesh, line } of wireframePairs) {
+			mesh.parent.remove(line);
+			line.geometry.dispose();
+		}
+		wireframeMat.dispose();
+		wireframePairs.length = 0;
+		if (wireframeShards) {
+			for (const s of wireframeShards.labels) { s.material.map.dispose(); s.material.dispose(); }
+			for (const l of wireframeShards.lines) l.geometry.dispose();
+			core.remove(wireframeShards.group);
+			wireframeShards = null;
+		}
+	}
+
+	function updateIntroSequence(now) {
+		if (introStart === null || introDone) return;
+		const elapsed = now - introStart;
+		const holdEnd = REVEAL_MS + WIREFRAME_HOLD_MS;
+		const crossfadeEnd = holdEnd + CROSSFADE_MS;
+		if (elapsed < holdEnd) {
+			introBloomStrength = BLOOM_BOOST;
+			return;
+		}
+		if (!crossfadeStarted) {
+			crossfadeStarted = true;
+			for (const { mesh } of wireframePairs) mesh.visible = true;
+		}
+		const ct = Math.min(1, (elapsed - holdEnd) / CROSSFADE_MS);
+		const e = easeOutCubic(ct);
+		introBloomStrength = BLOOM_BOOST + (config.bloom - BLOOM_BOOST) * e;
+		wireframeMat.opacity = 1 - e;
+		if (wireframeShards) { for (const s of wireframeShards.labels) s.material.opacity = 1 - e; }
+		if (elapsed >= crossfadeEnd) finishIntroSequence();
+	}
+
 	// --- scroll state -------------------------------------------------
 	let scrollProgress = 0;     // 0..1 raw from scrollbar
 	let easedProgress = 0;      // smoothed, drives rotation (uncapped — continues past 500vh)
@@ -1289,8 +1327,9 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 	const clock = new THREE.Clock();
 	let lastElapsed = 0;
 	function tick() {
+		const now = performance.now();
 		if (revealStart !== null) {
-			const rt = Math.min(1, (performance.now() - revealStart) / REVEAL_MS);
+			const rt = Math.min(1, (now - revealStart) / REVEAL_MS);
 			const pct = easeOutCubic(rt) * 100;
 			const feather = 8;   // percentage-points of soft edge
 			const g = `radial-gradient(circle farthest-corner at 50% 50%, transparent 0%, transparent ${Math.max(0, pct - feather)}%, white ${pct}%, white 100%)`;
@@ -1298,6 +1337,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 			preloaderEl.style.webkitMaskImage = g;
 			if (rt >= 1) revealStart = null;
 		}
+		updateIntroSequence(now);
 		const t = clock.getElapsedTime();
 		const dt = Math.min(0.05, t - lastElapsed);
 		lastElapsed = t;
