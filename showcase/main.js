@@ -27,18 +27,63 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 	let revealStart = null;        // performance.now() timestamp when the reveal began; null = idle/done
 	function easeOutCubic(x) { return 1 - Math.pow(1 - x, 3); }
 
-	// --- intro sequence: wireframe reveal that plays under the iris, then
-	// crossfades into the final rendered scene. Driven by tick(), not a
-	// separate rAF loop (see updateIntroSequence()).
-	const WIREFRAME_HOLD_MS = 900;   // how long the wireframe scene sits before crossfading
-	const CROSSFADE_MS = 900;        // wireframe fade-out + real-mesh pop-in + bloom ease-down
-	const BLOOM_BOOST = 0.7;         // bloom strength while the wireframe is glowing (config.bloom is normally 0.15)
+	// --- intro sequence: a particle-traced version of the scene that plays
+	// under the iris, then crossfades into the final rendered scene. Driven
+	// by tick(), not a separate rAF loop (see updateIntroSequence()).
+	const WIREFRAME_HOLD_MS = 900;   // how long the particle scene sits before crossfading
+	const CROSSFADE_MS = 900;        // particle fade-out + real-mesh pop-in + bloom ease-down
+	const BLOOM_BOOST = 0.9;         // bloom strength while the particles are glowing (config.bloom is normally 0.15)
 	let introStart = null;           // performance.now() timestamp when hidePreloader() fired; null = not started
 	let introBloomStrength = null;   // non-null overrides bloomPass.strength for the intro; null = use config.bloom
 	let crossfadeStarted = false;
 	let introDone = false;
-	const wireframeMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 1, depthWrite: false });
-	const wireframePairs = [];   // { mesh, line } — real meshes hidden + their wireframe outline, for Task 1/3
+	// shared amber shader material for every particle stand-in — same soft-dot
+	// falloff + colorA/colorB mix as the hero's ambient particle field
+	// (buildParticles()), without its twinkle/glint motion since these sit
+	// still tracing the model rather than drifting like ambient dust.
+	// u_size gets pixel-ratio-scaled once renderer exists (see enterWireframePhase()).
+	const wireframeParticleMat = new THREE.ShaderMaterial({
+		transparent: true,
+		depthWrite: false,
+		blending: THREE.AdditiveBlending,
+		uniforms: {
+			u_size: { value: 5.5 },
+			u_opacity: { value: 1 },
+			// brighter than the ambient dust's colorA/colorB range (0x6a4420..0xffd49a)
+			// on purpose — that dark end reads at nearly the same luminance as this
+			// scene's warm amber background/environment and disappears against it
+			u_colorA: { value: new THREE.Color(0xffb347) },
+			u_colorB: { value: new THREE.Color(0xfff2d9) }
+		},
+		vertexShader: `
+			uniform float u_size;
+			attribute float aSeed;
+			varying float vSeed;
+			void main() {
+				vSeed = aSeed;
+				vec4 mv = modelViewMatrix * vec4(position, 1.0);
+				gl_Position = projectionMatrix * mv;
+				gl_PointSize = u_size / max(1.0, -mv.z);
+			}
+		`,
+		fragmentShader: `
+			uniform vec3 u_colorA;
+			uniform vec3 u_colorB;
+			uniform float u_opacity;
+			varying float vSeed;
+			void main() {
+				vec2 uv = gl_PointCoord - 0.5;
+				float d = dot(uv, uv);
+				float soft = exp(-d * 8.0);
+				float core = exp(-d * 40.0);
+				if (soft < 0.02 && core < 0.02) discard;
+				vec3 col = mix(u_colorA, u_colorB, vSeed);
+				float a = soft * 0.7 + core * 1.4;
+				gl_FragColor = vec4(col, a * u_opacity);
+			}
+		`
+	});
+	const wireframePairs = [];   // { mesh, points } — real meshes hidden + their particle stand-in
 	function hidePreloader() {
 		if (preloaderHidden) return;
 		preloaderHidden = true;
@@ -64,92 +109,95 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 	}
 	setTimeout(hidePreloader, 8000);
 
-	// --- intro wireframe: glowing outline stand-ins for the logo + ground,
-	// shown while the real meshes are hidden, so the iris opens onto a
-	// "blueprint" version of the hero before it resolves into the final render.
+	// --- intro particles: glowing amber particle stand-ins for the logo +
+	// ground, shown while the real meshes are hidden, so the iris opens onto a
+	// "scanned" version of the hero before it resolves into the final render.
 	// column.glb is out of scope — it's only visible later in the scroll-driven
 	// showcase section, not in the hero view this intro plays over.
-	function makeWireframeLine(mesh) {
-		const edges = new THREE.EdgesGeometry(mesh.geometry);
-		const line = new THREE.LineSegments(edges, wireframeMat);
+	const WIREFRAME_DOT_SPACING_FRACTION = 0.02;   // dot spacing, as a fraction of the *whole object's* bounding diagonal
+
+	function makeWireframePoints(mesh, refDiag) {
+		// splat dots along the mesh's actual edges (not raw vertices) — this
+		// traces the same recognizable silhouette the old EdgesGeometry lines
+		// did, just rendered as a dotted line instead of a solid one.
+		// refDiag is the *whole object's* raw bounding diagonal (coreMaxDim for
+		// the logo, groundMaxDim for the ground) — not this one mesh's own,
+		// since e.g. the logo is split into many small slabs and sizing spacing
+		// off each tiny slab's own bbox packs far too many dots into the whole.
+		// threshold angle well above the default 1° — a finely-tessellated
+		// curved surface (the glass logo especially) has thousands of nearly-flat
+		// triangle seams that count as "edges" at the default threshold, wildly
+		// overcounting; this keeps only genuinely sharp/silhouette edges
+		const edges = new THREE.EdgesGeometry(mesh.geometry, 20);
+		const src = edges.attributes.position;   // consecutive pairs: [a0,b0, a1,b1, ...]
+		const spacing = refDiag * WIREFRAME_DOT_SPACING_FRACTION;
+		const jitterRadius = spacing * 0.35;   // subtle — dots scatter loosely around the edge, not plotted exactly on it
+		const coords = [];
+		const seeds = [];
+		const a = new THREE.Vector3(), b = new THREE.Vector3();
+		const dir = new THREE.Vector3(), ref = new THREE.Vector3(), u = new THREE.Vector3(), v = new THREE.Vector3();
+		for (let i = 0; i < src.count; i += 2) {
+			a.fromBufferAttribute(src, i);
+			b.fromBufferAttribute(src, i + 1);
+			const edgeLen = a.distanceTo(b);
+			if (edgeLen < 1e-6) continue;   // degenerate zero-length edge — normalize() below would divide by zero into NaN
+			const steps = Math.max(1, Math.round(edgeLen / spacing));
+			// stable perpendicular basis for this edge, so jitter can push dots
+			// sideways off the line rather than just along it
+			dir.subVectors(b, a).normalize();
+			ref.set(0, 1, 0);
+			if (Math.abs(dir.dot(ref)) > 0.99) ref.set(1, 0, 0);
+			u.crossVectors(dir, ref).normalize();
+			v.crossVectors(dir, u);
+			for (let s = 0; s <= steps; s++) {
+				// irregular spacing along the edge (not perfectly even steps) plus
+				// a small perpendicular offset — organic scatter, not a plotted line
+				const t = THREE.MathUtils.clamp((s + (Math.random() - 0.5) * 0.6) / steps, 0, 1);
+				const angle = Math.random() * Math.PI * 2;
+				const r = Math.random() * jitterRadius;
+				coords.push(
+					a.x + (b.x - a.x) * t + (u.x * Math.cos(angle) + v.x * Math.sin(angle)) * r,
+					a.y + (b.y - a.y) * t + (u.y * Math.cos(angle) + v.y * Math.sin(angle)) * r,
+					a.z + (b.z - a.z) * t + (u.z * Math.cos(angle) + v.z * Math.sin(angle)) * r
+				);
+				seeds.push(Math.random());
+			}
+		}
+		edges.dispose();   // only used to derive the dot coordinates above, never rendered itself
+		const geo = new THREE.BufferGeometry();
+		geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(coords), 3));
+		geo.setAttribute("aSeed", new THREE.BufferAttribute(new Float32Array(seeds), 1));
+		const points = new THREE.Points(geo, wireframeParticleMat);
 		// sibling of mesh (not a child) — mesh.visible = false would also hide a
 		// child, since Three.js skips an invisible object's whole subtree
-		line.position.copy(mesh.position);
-		line.quaternion.copy(mesh.quaternion);
-		line.scale.copy(mesh.scale);
-		mesh.parent.add(line);
+		points.position.copy(mesh.position);
+		points.quaternion.copy(mesh.quaternion);
+		points.scale.copy(mesh.scale);
+		mesh.parent.add(points);
 		mesh.visible = false;
-		return line;
+		return points;
 	}
 
 	function enterWireframePhase() {
-		for (const g of glassMeshes) wireframePairs.push({ mesh: g.mesh, line: makeWireframeLine(g.mesh) });
+		wireframeParticleMat.uniforms.u_size.value = 3.0 * renderer.getPixelRatio();
+		for (const g of glassMeshes) wireframePairs.push({ mesh: g.mesh, points: makeWireframePoints(g.mesh, coreMaxDim) });
 		if (groundObj) {
 			groundObj.traverse((o) => {
-				if (o.isMesh) wireframePairs.push({ mesh: o, line: makeWireframeLine(o) });
+				if (o.isMesh) wireframePairs.push({ mesh: o, points: makeWireframePoints(o, groundMaxDim) });
 			});
 		}
-		wireframeShards = buildWireframeShards();
 		introBloomStrength = BLOOM_BOOST;
-	}
-
-	let wireframeShards = null;   // { group, lines, labels } — disposed once the crossfade finishes (Task 3)
-
-	function makeShardLabel(text) {
-		const cv = document.createElement("canvas"); cv.width = 64; cv.height = 32;
-		const ctx = cv.getContext("2d");
-		ctx.fillStyle = "rgba(255,255,255,0.55)";
-		ctx.font = "600 20px ui-monospace, monospace";
-		ctx.textAlign = "center"; ctx.textBaseline = "middle";
-		ctx.fillText(text, 32, 16);
-		const tex = new THREE.CanvasTexture(cv);
-		const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
-		sprite.scale.set(0.4, 0.2, 1);
-		return sprite;
-	}
-
-	function buildWireframeShards() {
-		const group = new THREE.Group();
-		const lines = [];
-		const labels = [];
-		for (let i = 0; i < 4; i++) {
-			const size = 0.15 + Math.random() * 0.15;
-			const geo = new THREE.TetrahedronGeometry(size);
-			const edges = new THREE.EdgesGeometry(geo);
-			const line = new THREE.LineSegments(edges, wireframeMat);
-			const theta = Math.random() * Math.PI * 2;
-			const phi = Math.acos(2 * Math.random() - 1);
-			const r = 2.6 + Math.random() * 1.4;   // just outside the logo, well inside the ambient particle field
-			line.position.set(r * Math.sin(phi) * Math.cos(theta), r * Math.cos(phi) * 0.8, r * Math.sin(phi) * Math.sin(theta));
-			line.userData.spinAxis = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize();
-			line.userData.spinSpeed = 0.15 + Math.random() * 0.25;
-			group.add(line);
-			lines.push(line);
-
-			const label = makeShardLabel(String(10 + Math.floor(Math.random() * 89)));
-			label.position.copy(line.position).multiplyScalar(1.08);
-			group.add(label);
-			labels.push(label);
-		}
-		core.add(group);   // rides along with the logo's own transform
-		return { group, lines, labels };
 	}
 
 	function finishIntroSequence() {
 		introDone = true;
 		introBloomStrength = null;
-		for (const { mesh, line } of wireframePairs) {
-			mesh.parent.remove(line);
-			line.geometry.dispose();
+		for (const { mesh, points } of wireframePairs) {
+			mesh.parent.remove(points);
+			points.geometry.dispose();
 		}
-		wireframeMat.dispose();
+		wireframeParticleMat.dispose();
 		wireframePairs.length = 0;
-		if (wireframeShards) {
-			for (const s of wireframeShards.labels) { s.material.map.dispose(); s.material.dispose(); }
-			for (const l of wireframeShards.lines) l.geometry.dispose();
-			core.remove(wireframeShards.group);
-			wireframeShards = null;
-		}
 	}
 
 	function updateIntroSequence(now) {
@@ -168,8 +216,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		const ct = Math.min(1, (elapsed - holdEnd) / CROSSFADE_MS);
 		const e = easeOutCubic(ct);
 		introBloomStrength = BLOOM_BOOST + (config.bloom - BLOOM_BOOST) * e;
-		wireframeMat.opacity = 1 - e;
-		if (wireframeShards) { for (const s of wireframeShards.labels) s.material.opacity = 1 - e; }
+		wireframeParticleMat.uniforms.u_opacity.value = 1 - e;
 		if (elapsed >= crossfadeEnd) finishIntroSequence();
 	}
 
@@ -683,6 +730,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 	scene.add(groundPivot);
 	let groundReady = false;
 	let groundHalfH = 0;
+	let groundMaxDim = 1;   // raw (pre-fit-scale) bounding diagonal — used by the intro's dot-spacing calc
 
 	function applyGround() {
 		if (!groundReady) return;
@@ -718,6 +766,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 				const size = box.getSize(new THREE.Vector3());
 				const span = Math.max(size.x, size.z) || 1;
 				const fit = GROUND_SPAN / span;
+				groundMaxDim = size.length() || 1;
 				ground.scale.setScalar(fit);
 
 				box = new THREE.Box3().setFromObject(ground);
@@ -1236,9 +1285,12 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 				c.mesh.quaternion.copy(_ringQuat);
 			}
 			// fade the whole card (body + text together) as it travels toward a screen
-			// corner, so exiting cards don't leave their glowing text detached behind
+			// corner, so exiting cards don't leave their glowing text detached behind.
+			// NDC x is compressed by aspect ratio, so on narrow mobile screens the
+			// mostly-horizontal swing reaches the fade thresholds far sooner than on
+			// desktop — undo that skew so the fade timing matches desktop's feel.
 			c.mesh.getWorldPosition(_proj).project(camera);
-			const rad = Math.hypot(_proj.x, _proj.y);
+			const rad = Math.hypot(isMobile ? _proj.x * camera.aspect : _proj.x, _proj.y);
 			const cornerFade = c === focusedCard ? 1 : 1 - THREE.MathUtils.smoothstep(rad, 0.72, 1.08);
 			c.mat.opacity = appear * cornerFade * (focusedCard && c !== focusedCard ? 0.35 : 1);
 			c.textMat.opacity = c.mat.opacity;   // title fades with its card
@@ -1342,10 +1394,6 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		const dt = Math.min(0.05, t - lastElapsed);
 		lastElapsed = t;
 		flakeTime += dt * config.glowSpeed;
-
-		if (wireframeShards) {
-			for (const l of wireframeShards.lines) l.rotateOnAxis(l.userData.spinAxis, l.userData.spinSpeed * dt);
-		}
 
 		const sr = config.outroStart    / config.trackHeight;
 		const cr = config.showcaseStart / config.trackHeight;
