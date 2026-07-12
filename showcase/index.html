@@ -7,9 +7,9 @@
 	<link rel="stylesheet" href="style.css" />
 </head>
 <body>
-	<div id="preloader"><div class="preloader-mark">Nizi Labs</div></div>
+	<div id="preloader"></div>
+	<div class="preloader-mark">Nizi Labs</div>
 	<canvas id="webgl"></canvas>
-	<div id="outro-veil"></div>
 
 	<h1 class="headline pre-reveal">We build what the internet hasn't seen before.</h1>
 
@@ -19,6 +19,10 @@
 	<div class="panel" id="panel">
 		<button class="panel-toggle" id="panelToggle">Controls</button>
 		<div class="panel-body">
+			<div class="section-label">Intro</div>
+			<div class="ctrl">
+				<button class="copy-btn" id="replayBtn">▶ Replay intro</button>
+			</div>
 			<div class="ctrl upload-ctrl">
 				<label>Ground model</label>
 				<input type="file" id="upload" accept=".glb,.gltf" />
@@ -168,9 +172,50 @@
 				<label>Track length <span class="val" id="v-track">1400vh</span></label>
 				<input type="range" id="s-track" min="200" max="2000" step="50" value="1400" />
 			</div>
+			<div class="section-label">Transition</div>
 			<div class="ctrl">
-				<label>Outro dim <span class="val" id="v-outrodim">0.50</span></label>
-				<input type="range" id="s-outrodim" min="0" max="1" step="0.05" value="0.50" />
+				<label>Transition chroma <span class="val" id="v-transchroma">0.05</span></label>
+				<input type="range" id="s-transchroma" min="0" max="0.6" step="0.01" value="0.05" />
+			</div>
+			<div class="ctrl">
+				<label>Transition streak <span class="val" id="v-transstreak">0.10</span></label>
+				<input type="range" id="s-transstreak" min="0" max="1" step="0.01" value="0.10" />
+			</div>
+			<div class="ctrl">
+				<label>Wipe jitter <span class="val" id="v-wipejitter">0.10</span></label>
+				<input type="range" id="s-wipejitter" min="0" max="1" step="0.01" value="0.10" />
+			</div>
+			<div class="ctrl">
+				<label>Wipe softness <span class="val" id="v-wipesoft">0.20</span></label>
+				<input type="range" id="s-wipesoft" min="0.005" max="0.2" step="0.005" value="0.20" />
+			</div>
+			<div class="ctrl">
+				<label>Wipe noise scale <span class="val" id="v-wipenoise">1.00</span></label>
+				<input type="range" id="s-wipenoise" min="0.2" max="3" step="0.05" value="1.00" />
+			</div>
+			<div class="ctrl">
+				<label>Wipe flicker speed <span class="val" id="v-wipeflicker">1.00</span></label>
+				<input type="range" id="s-wipeflicker" min="0" max="10" step="0.1" value="1.00" />
+			</div>
+			<div class="ctrl">
+				<label>Wipe wave <span class="val" id="v-wipewave">0.085</span></label>
+				<input type="range" id="s-wipewave" min="0" max="0.2" step="0.005" value="0.085" />
+			</div>
+			<div class="ctrl">
+				<label>Wave tilt <span class="val" id="v-wavetilt">-0.35</span></label>
+				<input type="range" id="s-wavetilt" min="-1" max="1" step="0.05" value="-0.35" />
+			</div>
+			<div class="ctrl">
+				<label>Transition release <span class="val" id="v-transrelease">0.15</span></label>
+				<input type="range" id="s-transrelease" min="0.05" max="0.5" step="0.01" value="0.15" />
+			</div>
+			<div class="ctrl">
+				<label>Vignette outer <span class="val" id="v-vigouter">1.20</span></label>
+				<input type="range" id="s-vigouter" min="0.5" max="2" step="0.01" value="1.20" />
+			</div>
+			<div class="ctrl">
+				<label>Vignette inner <span class="val" id="v-viginner">0.40</span></label>
+				<input type="range" id="s-viginner" min="0" max="1.5" step="0.01" value="0.40" />
 			</div>
 			<div class="section-label">Showcase</div>
 			<div class="ctrl">

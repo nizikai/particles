@@ -21,28 +21,46 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 	// timeout guards against a stalled/failed asset trapping the user.
 	let preloaderHidden = false;
 	const PRELOAD_MIN_MS = 2000;   // keep the wordmark on screen at least this long, even on a cache-hit reload
-	const REVEAL_MS = 1300;        // iris-reveal duration; also drives the opacity-fallback transition (see tick())
 	const preloadStart = performance.now();
 	const preloadState = { logo: false, ground: false, column: false, fonts: false };
-	let revealStart = null;        // performance.now() timestamp when the reveal began; null = idle/done
 	function easeOutCubic(x) { return 1 - Math.pow(1 - x, 3); }
+	function easeInOutCubic(x) { return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2; }
 
-	// --- intro sequence: a particle-traced version of the scene that plays
-	// under the iris, then crossfades into the final rendered scene. Driven
-	// by tick(), not a separate rAF loop (see updateIntroSequence()).
-	const WIREFRAME_HOLD_MS = 900;   // how long the particle scene sits before crossfading
-	const CROSSFADE_MS = 900;        // particle fade-out + real-mesh pop-in + bloom ease-down
+	// --- intro sequence: a particle-traced version of the scene that randomly
+	// spawns in on a dark screen, then crossfades into the final rendered
+	// scene. Driven by tick(), not a separate rAF loop (see updateIntroSequence()).
+	const PARTICLE_SPAWN_MS = 1400;  // window over which particles individually glow in, staggered
+	const WIREFRAME_HOLD_MS = 2000;  // how long the particle scene sits before crossfading (spawning happens within this)
+	const CROSSFADE_MS = 2600;       // particle fade-out + real-mesh pop-in + bloom ease-down — slow, staged, not instant
+	// a depth-fog "wall" that starts right in front of the camera and recedes
+	// backward through the whole scene over the crossfade, so real geometry
+	// emerges from front to back instead of popping in all at once
+	const FOG_BAND_WIDTH = 6;    // depth-units the fog transition spans at any instant
+	const FOG_FAR_START = 1.5;   // where the fog wall's far edge sits at crossfade start — hides essentially everything
+	const FOG_FAR_END = 36;      // where it ends up at crossfade end — the band's *near* edge (far − FOG_BAND_WIDTH)
+	                             // must also clear the ground's ~26-unit back edge, or removing scene.fog at
+	                             // finish visibly unfogs the back wall in one frame
+	// The glass logo (MeshTransmissionMaterial) refracts an offscreen capture of
+	// the WHOLE scene every frame — so it only looks right once the scene is
+	// stable (bright, no fog). Reveal it too early and it refracts the dim/foggy
+	// transition into an opaque, gold, shattered-looking slab. Its particle
+	// stand-in holds until the handoff, masked by a bloom flash.
+	const logoRevealT = 0.1;         // fraction into the crossfade to swap logo particles → real glass (hand-tuned)
+	const LOGO_FLASH_BOOST = 0.3;    // extra bloom shimmer right at that swap, to mask it
+	const LOGO_FLASH_WIDTH = 0.08;   // width of that flash, in crossfade-fraction units
 	const BLOOM_BOOST = 0.9;         // bloom strength while the particles are glowing (config.bloom is normally 0.15)
 	let introStart = null;           // performance.now() timestamp when hidePreloader() fired; null = not started
 	let introBloomStrength = null;   // non-null overrides bloomPass.strength for the intro; null = use config.bloom
 	let crossfadeStarted = false;
+	let logoRevealed = false;
 	let introDone = false;
-	// non-null overrides scene.background (+ forces haze/mist hidden) for the
-	// intro, so the particles read against solid black first, then this color
-	// lerps back toward the real sky during the crossfade; null = normal scene
-	const INTRO_BG_BLACK = new THREE.Color(0x000000);
-	const INTRO_BG_TARGET = new THREE.Color(0x5a2c0f);
-	let introBgColor = null;
+	// non-null overrides scene.backgroundIntensity (+ forces haze/mist hidden)
+	// for the intro — the real equirect texture stays as scene.background the
+	// whole time (never swapped for an approximated flat color, which never
+	// quite matches and produces a visible snap when handed back), just
+	// dimmed to black then ramped back up to full brightness; null = normal
+	const FOG_COLOR = new THREE.Color(0x120800);   // fixed — close to the equirect's own darkest gradient stop
+	let introBgIntensity = null;
 	// shared amber shader material for every particle stand-in — same soft-dot
 	// falloff + colorA/colorB mix as the hero's ambient particle field
 	// (buildParticles()), without its twinkle/glint motion since these sit
@@ -55,6 +73,9 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		uniforms: {
 			u_size: { value: 5.5 },
 			u_opacity: { value: 1 },
+			u_spawnElapsed: { value: 0 },        // seconds since introStart
+			u_spawnWindow: { value: PARTICLE_SPAWN_MS / 1000 },
+			u_spawnFadeIn: { value: 0.6 },        // seconds each particle takes to glow in once its own delay elapses
 			// brighter than the ambient dust's colorA/colorB range (0x6a4420..0xffd49a)
 			// on purpose — that dark end reads at nearly the same luminance as this
 			// scene's warm amber background/environment and disappears against it
@@ -63,13 +84,23 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		},
 		vertexShader: `
 			uniform float u_size;
+			uniform float u_spawnElapsed;
+			uniform float u_spawnWindow;
+			uniform float u_spawnFadeIn;
 			attribute float aSeed;
+			attribute float aSpawnDelay;
 			varying float vSeed;
+			varying float vSpawn;
 			void main() {
 				vSeed = aSeed;
+				// each particle waits its own random delay (spread across u_spawnWindow),
+				// then pops in over u_spawnFadeIn — a staggered random spawn, not a
+				// uniform fade-in
+				float spawnStart = aSpawnDelay * u_spawnWindow;
+				vSpawn = clamp((u_spawnElapsed - spawnStart) / u_spawnFadeIn, 0.0, 1.0);
 				vec4 mv = modelViewMatrix * vec4(position, 1.0);
 				gl_Position = projectionMatrix * mv;
-				gl_PointSize = u_size / max(1.0, -mv.z);
+				gl_PointSize = u_size * vSpawn / max(1.0, -mv.z);
 			}
 		`,
 		fragmentShader: `
@@ -77,7 +108,9 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 			uniform vec3 u_colorB;
 			uniform float u_opacity;
 			varying float vSeed;
+			varying float vSpawn;
 			void main() {
+				if (vSpawn <= 0.0) discard;
 				vec2 uv = gl_PointCoord - 0.5;
 				float d = dot(uv, uv);
 				float soft = exp(-d * 8.0);
@@ -85,26 +118,22 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 				if (soft < 0.02 && core < 0.02) discard;
 				vec3 col = mix(u_colorA, u_colorB, vSeed);
 				float a = soft * 0.7 + core * 1.4;
-				gl_FragColor = vec4(col, a * u_opacity);
+				gl_FragColor = vec4(col, a * vSpawn * u_opacity);
 			}
 		`
 	});
-	const wireframePairs = [];   // { mesh, points } — real meshes hidden + their particle stand-in
+	// the logo particles hold their opacity through the whole fog reveal (the
+	// ground particles fade with the fog) and only vanish at the handoff to the
+	// real glass, so they need their own opacity control — hence a separate
+	// clone of the shared material rather than the same instance
+	const logoParticleMat = wireframeParticleMat.clone();
+	const wireframePairs = [];   // { mesh, points, isGlass } — real meshes hidden + their particle stand-in
 	function hidePreloader() {
 		if (preloaderHidden) return;
 		preloaderHidden = true;
 		document.documentElement.classList.remove("loading");
-		preloaderEl.style.transitionDuration = REVEAL_MS + "ms";
 		preloaderEl.classList.add("hidden");
-		revealStart = performance.now();
-		introStart = revealStart;
-		setTimeout(() => preloaderEl.remove(), REVEAL_MS + 100);
-		const mark = preloaderEl.querySelector(".preloader-mark");
-		if (mark) mark.classList.add("leaving");
-		const headline = document.querySelector(".headline");
-		headline.classList.remove("pre-reveal");
-		headline.classList.add("reveal");
-		enterWireframePhase();
+		beginIntro();   // dims the scene fully dark first, so hiding this div is imperceptible
 	}
 	function markLoaded(key) {
 		preloadState[key] = true;
@@ -122,7 +151,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 	// showcase section, not in the hero view this intro plays over.
 	const WIREFRAME_DOT_SPACING_FRACTION = 0.02;   // dot spacing, as a fraction of the *whole object's* bounding diagonal
 
-	function makeWireframePoints(mesh, refDiag) {
+	function makeWireframePoints(mesh, refDiag, mat) {
 		// splat dots along the mesh's actual edges (not raw vertices) — this
 		// traces the same recognizable silhouette the old EdgesGeometry lines
 		// did, just rendered as a dotted line instead of a solid one.
@@ -140,6 +169,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		const jitterRadius = spacing * 0.15;   // subtle — dots scatter loosely around the edge, not plotted exactly on it
 		const coords = [];
 		const seeds = [];
+		const spawnDelays = [];
 		const a = new THREE.Vector3(), b = new THREE.Vector3();
 		const dir = new THREE.Vector3(), ref = new THREE.Vector3(), u = new THREE.Vector3(), v = new THREE.Vector3();
 		for (let i = 0; i < src.count; i += 2) {
@@ -167,13 +197,15 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 					a.z + (b.z - a.z) * t + (u.z * Math.cos(angle) + v.z * Math.sin(angle)) * r
 				);
 				seeds.push(Math.random());
+				spawnDelays.push(Math.random());
 			}
 		}
 		edges.dispose();   // only used to derive the dot coordinates above, never rendered itself
 		const geo = new THREE.BufferGeometry();
 		geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(coords), 3));
+		geo.setAttribute("aSpawnDelay", new THREE.BufferAttribute(new Float32Array(spawnDelays), 1));
 		geo.setAttribute("aSeed", new THREE.BufferAttribute(new Float32Array(seeds), 1));
-		const points = new THREE.Points(geo, wireframeParticleMat);
+		const points = new THREE.Points(geo, mat);
 		// sibling of mesh (not a child) — mesh.visible = false would also hide a
 		// child, since Three.js skips an invisible object's whole subtree
 		points.position.copy(mesh.position);
@@ -186,32 +218,93 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 
 	function enterWireframePhase() {
 		wireframeParticleMat.uniforms.u_size.value = 3.0 * renderer.getPixelRatio();
-		for (const g of glassMeshes) wireframePairs.push({ mesh: g.mesh, points: makeWireframePoints(g.mesh, coreMaxDim) });
+		logoParticleMat.uniforms.u_size.value = 3.0 * renderer.getPixelRatio();
+		// isGlass tags let the crossfade treat the two differently: the ground
+		// reveals gradually via fog while its particles fade; the logo (which
+		// can't refract a mid-transition scene cleanly) keeps its own particles
+		// full-strength until the very end, then swaps to real glass. Hence the
+		// two use separate materials (see updateIntroSequence()).
+		for (const g of glassMeshes) wireframePairs.push({ mesh: g.mesh, points: makeWireframePoints(g.mesh, coreMaxDim, logoParticleMat), isGlass: true });
 		if (groundObj) {
 			groundObj.traverse((o) => {
-				if (o.isMesh) wireframePairs.push({ mesh: o, points: makeWireframePoints(o, groundMaxDim) });
+				if (o.isMesh) wireframePairs.push({ mesh: o, points: makeWireframePoints(o, groundMaxDim, wireframeParticleMat), isGlass: false });
 			});
 		}
 		introBloomStrength = BLOOM_BOOST;
-		introBgColor = INTRO_BG_BLACK.clone();
+		introBgIntensity = 0;
+		scene.fog = new THREE.Fog(FOG_COLOR, 0.1, FOG_FAR_START);
+		// scene.fog just went null -> non-null, which forces every affected
+		// material (including the glass logo's heavy custom shader) to
+		// recompile. Force that recompile now, while the real meshes are still
+		// hidden, instead of letting it happen on the exact frame they first
+		// become visible again — a mid-transition shader recompile risks a
+		// one-frame rendering glitch on some GPUs.
+		for (const { mesh } of wireframePairs) mesh.visible = true;
+		renderer.compile(scene, camera);
+		for (const { mesh } of wireframePairs) mesh.visible = false;
+	}
+
+	// remove + free the particle stand-ins, but keep the shared materials alive
+	// so the intro can be replayed (see beginIntro()) without rebuilding them
+	function teardownIntroParticles() {
+		for (const { points } of wireframePairs) {
+			points.parent?.remove(points);
+			points.geometry.dispose();
+		}
+		wireframePairs.length = 0;
 	}
 
 	function finishIntroSequence() {
 		introDone = true;
 		introBloomStrength = null;
-		introBgColor = null;
-		for (const { mesh, points } of wireframePairs) {
-			mesh.parent.remove(points);
-			points.geometry.dispose();
-		}
-		wireframeParticleMat.dispose();
-		wireframePairs.length = 0;
+		introBgIntensity = null;
+		scene.backgroundIntensity = 1;
+		hazeMat.opacity = config.haze;
+		scene.fog = null;
+		revealLogo();   // no-op if already revealed (guards against skipped frames)
+		teardownIntroParticles();
+		// the wordmark stays in the DOM (faded via .leaving) so a replay can
+		// re-show it; the #preloader div likewise stays (hidden) for the same reason
+	}
+
+	// (re)start the whole intro from the top — used both for the first play
+	// (from hidePreloader) and for the dev-panel Replay button / style toggle
+	function beginIntro() {
+		teardownIntroParticles();   // clear any in-progress intro (safe if empty)
+		crossfadeStarted = false;
+		logoRevealed = false;
+		introDone = false;
+		wireframeParticleMat.uniforms.u_opacity.value = 1;
+		logoParticleMat.uniforms.u_opacity.value = 1;
+		wireframeParticleMat.uniforms.u_spawnElapsed.value = 0;
+		logoParticleMat.uniforms.u_spawnElapsed.value = 0;
+		const mark = document.querySelector(".preloader-mark");
+		if (mark) mark.classList.remove("leaving");
+		const headline = document.querySelector(".headline");
+		headline.classList.remove("reveal");
+		headline.classList.add("pre-reveal");
+		enterWireframePhase();   // rebuild the particle stand-ins, dim the scene, set fog, hide the real meshes
+		introStart = performance.now();
+	}
+
+	// hand off from the logo's particle stand-in to the real glass logo. Called
+	// only once the scene is stable (fog gone, sky at full brightness, transition
+	// particles hidden) so the glass refracts a clean scene, not the transition.
+	function revealLogo() {
+		if (logoRevealed) return;
+		logoRevealed = true;
+		// the particles cross-fade out over the rest of the crossfade (see
+		// updateIntroSequence()) rather than vanishing this frame — additive
+		// blending means glass + fading particles just read as a shimmer
+		for (const { mesh, isGlass } of wireframePairs) if (isGlass) mesh.visible = true;
 	}
 
 	function updateIntroSequence(now) {
 		if (introStart === null || introDone) return;
 		const elapsed = now - introStart;
-		const holdEnd = REVEAL_MS + WIREFRAME_HOLD_MS;
+		wireframeParticleMat.uniforms.u_spawnElapsed.value = elapsed / 1000;
+		logoParticleMat.uniforms.u_spawnElapsed.value = elapsed / 1000;
+		const holdEnd = WIREFRAME_HOLD_MS;
 		const crossfadeEnd = holdEnd + CROSSFADE_MS;
 		if (elapsed < holdEnd) {
 			introBloomStrength = BLOOM_BOOST;
@@ -219,13 +312,35 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		}
 		if (!crossfadeStarted) {
 			crossfadeStarted = true;
-			for (const { mesh } of wireframePairs) mesh.visible = true;
+			// ground only — fog (below) hides it until the wall reaches each
+			// part; the glass logo stays as particles until the very end (below)
+			for (const { mesh, isGlass } of wireframePairs) if (!isGlass) mesh.visible = true;
+			// the wordmark lingers through the whole particle-on-black phase, and the
+			// hero headline only starts its own entrance once the hero itself appears
+			const mark = document.querySelector(".preloader-mark");
+			if (mark) mark.classList.add("leaving");
+			const headline = document.querySelector(".headline");
+			headline.classList.remove("pre-reveal");
+			headline.classList.add("reveal");
 		}
 		const ct = Math.min(1, (elapsed - holdEnd) / CROSSFADE_MS);
-		const e = easeOutCubic(ct);
-		introBloomStrength = BLOOM_BOOST + (config.bloom - BLOOM_BOOST) * e;
-		wireframeParticleMat.uniforms.u_opacity.value = 1 - e;
-		introBgColor.lerpColors(INTRO_BG_BLACK, INTRO_BG_TARGET, e);
+		// in-out, not ease-out: ease-out front-loads ~2/3 of the reveal into the
+		// first ~1/3 of the time, which is exactly what read as "snappy"
+		const e = easeInOutCubic(ct);
+		// hand off the logo particles → real glass at logoRevealT
+		if (ct >= logoRevealT) revealLogo();
+		const logoFlash = Math.exp(-(((ct - logoRevealT) / LOGO_FLASH_WIDTH) ** 2)) * LOGO_FLASH_BOOST;
+		introBloomStrength = BLOOM_BOOST + (config.bloom - BLOOM_BOOST) * e + logoFlash;
+		wireframeParticleMat.uniforms.u_opacity.value = 1 - e;   // ground particles fade with the fog
+		// logo particles hold full strength until the glass appears, then
+		// cross-fade out over the remainder of the crossfade instead of a
+		// single-frame zero
+		logoParticleMat.uniforms.u_opacity.value = 1 - THREE.MathUtils.smoothstep(ct, logoRevealT, 1);
+		introBgIntensity = e;   // the real sky texture, dimmed to black then ramped back to full — no color snap
+		// a band sweeps front→back, so geometry emerges near-first
+		const bandFar = FOG_FAR_START + (FOG_FAR_END - FOG_FAR_START) * e;
+		scene.fog.far = bandFar;
+		scene.fog.near = Math.max(0.1, bandFar - FOG_BAND_WIDTH);
 		if (elapsed >= crossfadeEnd) finishIntroSequence();
 	}
 
@@ -235,6 +350,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 	let easedScene = 0;         // smoothed 0..1, drives camera dolly only (capped at 500vh)
 	let easedOutro = 0;         // smoothed 0..1 for the extra 20vh outro
 	let easedShowcase = 0;      // smoothed 0..1 for the dark showcase carousel phase
+	let easedSpin = 0;          // smoothed 0..1 carousel rotation, starts ramping at the outro so it's already turning during the transition wipe instead of sitting frozen until easedShowcase kicks in
 	// SCENE_RATIO is computed dynamically from config.outroStart in the tick loop
 	const pointer = { x: 0, y: 0, tx: 0, ty: 0 };
 
@@ -326,10 +442,20 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		bloom: 0.15,            // bloom strength (glow off bright areas)
 		chroma: 0.012,          // chromatic aberration strength (RGB split toward edges; 0 = off)
 		grain: 0.01,            // film grain + dither amount (also kills banding)
-		outroSpeed: 0.10,       // easing speed of the fade-to-black (higher = snappier)
-		outroStart: 545,        // vh position where the right-to-left fade begins
+		outroSpeed: 0.10,       // easing speed of the transition build/release (higher = snappier)
+		outroStart: 545,        // vh position where the glitch transition begins
 		trackHeight: 1400,      // total scroll track height in vh
-		outroDim: 0.5,          // max uniform full-screen darkening behind the sweep (0 = off, 1 = full black)
+		transitionChroma: 0.05, // extra radial chromatic aberration at peak transition (added on top of the base "chroma" grade)
+		transitionStreak: 0.1,  // peak directional zoom-streak distance at full transition
+		wipeJitter: 0.1,        // how noisy/jagged the bottom-to-top wipe boundary gets at peak glitch
+		wipeSoftness: 0.2,      // edge softness of the wipe boundary itself
+		wipeNoiseScale: 1.0,    // frequency of the wipe boundary's jitter noise (higher = finer static-like noise)
+		wipeFlickerSpeed: 1.0,  // how fast that noise animates over time
+		wipeWaveAmp: 0.085,     // gentle low-frequency undulation of the wipe boundary, so it isn't a flat line
+		wipeWaveTilt: -0.35,    // rotates the wipe boundary from horizontal (0) toward near-vertical (±1, ~80°); sign picks the lean direction
+		transitionRelease: 0.15,// how quickly the glitch relaxes once past the showcase boundary (lower = snappier)
+		vignetteOuter: 1.2,     // scene vignette: radius where it's fully dark
+		vignetteInner: 0.4,     // scene vignette: radius where it's fully clear
 		showcaseStart: 650,     // vh position where the dark showcase carousel begins
 		showcaseRadius: 4.3,    // radius of the showcase card ring
 		showcasePitch: 1.6,     // vertical rise per card — turns the ring into a DNA-style helix
@@ -494,6 +620,19 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 	const fillLight = new THREE.DirectionalLight(0x6a3a1a, 0.5);
 	fillLight.position.set(-6, 1.5, -3);
 	scene.add(fillLight);
+
+	// applies hero or showcase lighting on demand — used for both the real render
+	// and the temporary "opposite state" preview render captured during the wipe
+	function applyLighting(active, t) {
+		if (active) {
+			scene.backgroundRotation.y = columnGroup.rotation.y * config.glowSpin + t * config.skySpeed;
+			scene.environmentRotation.y = scene.backgroundRotation.y;
+			const sunAz = scene.backgroundRotation.y + config.skyGlowX * Math.PI * 2;
+			keyLight.position.set(Math.sin(sunAz) * keyLightDist, keyLightBase.y, Math.cos(sunAz) * keyLightDist);
+		} else {
+			keyLight.position.copy(keyLightBase);
+		}
+	}
 
 	// --- the rotating core group -------------------------------------
 	const core = new THREE.Group();
@@ -669,6 +808,11 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		m.attenuationColor = new THREE.Color(0xffd9a8);
 		m.attenuationDistance = config.logoAttenuationDist;
 		m.color = new THREE.Color(0xffffff);
+		// this material's transmission/refraction shader is heavily custom
+		// (multi-pass FBO sampling) and its interaction with scene.fog is
+		// unverified — disabling fog here specifically avoided a broken/
+		// "shattered" look on this mesh during the intro's fog reveal
+		m.fog = false;
 		return m;
 	}
 
@@ -1258,7 +1402,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		// materializing already centered.
 		const appear = Math.min(1, easedShowcase / 0.2);
 		const lead = 1;
-		const t = easedShowcase * (cards.length - 1 + lead) - lead;
+		const t = easedSpin * (cards.length - 1 + lead) - lead;
 		const arcStep = (Math.PI * 2 / cards.length) * config.cardArc;   // angular gap between cards
 		showcaseGroup.rotation.y = -t * arcStep;
 		showcaseGroup.position.y = t * config.showcasePitch;
@@ -1270,7 +1414,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 			showcaseGroup.position.y + config.columnY,
 			showcaseGroup.position.z
 		);
-		columnGroup.rotation.y = easedShowcase * Math.PI * 2 * config.columnTurns;
+		columnGroup.rotation.y = easedSpin * Math.PI * 2 * config.columnTurns;
 		camera.updateMatrixWorld();   // so card→screen projection below is current
 		cards.forEach((c, i) => {
 			c.helixY = -i * config.showcasePitch;
@@ -1322,6 +1466,11 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 	);
 	composer.addPass(new RenderPass(scene, camera));
 
+	// captures the "opposite" scene state (hero vs showcase) during the
+	// transition window only, so wipePass below can composite a real bottom-up
+	// content reveal instead of a hard cut
+	const otherRT = new THREE.WebGLRenderTarget(window.innerWidth, initH, { type: THREE.HalfFloatType });
+
 	// sanitize HDR buffer before bloom: superbright glints can go Inf/NaN in the
 	// HalfFloat target and UnrealBloomPass smears non-finite values into big
 	// black rectangles for a frame. Float compares (x != x) get optimized away
@@ -1346,6 +1495,61 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		`
 	})));
 
+	// composites the current render (tDiffuse, whichever of hero/showcase is
+	// active) with the "opposite" state (tOther, captured only during the
+	// transition window) along a noisy bottom-to-top wipe boundary — the jitter
+	// scales with the glitch amount so the seam is only ever visible while
+	// already chaotic, never as a clean line
+	const wipePass = new ShaderPass({
+		uniforms: {
+			tDiffuse: { value: null },
+			tOther: { value: null },   // set below — ShaderPass clones these uniforms at construction, and cloning a render-target texture isn't supported (warns + breaks the reference)
+			uTime: { value: 0 },
+			uWipe: { value: 0 },
+			uGlitch: { value: 0 },
+			uCurrentIsShowcase: { value: 0 },
+			uJitter: { value: config.wipeJitter },
+			uSoftness: { value: config.wipeSoftness },
+			uNoiseScale: { value: config.wipeNoiseScale },
+			uFlickerSpeed: { value: config.wipeFlickerSpeed },
+			uWaveAmp: { value: config.wipeWaveAmp },
+			uWaveTilt: { value: config.wipeWaveTilt }
+		},
+		vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+		fragmentShader: `
+			uniform sampler2D tDiffuse, tOther;
+			uniform float uTime, uWipe, uGlitch, uCurrentIsShowcase, uJitter, uSoftness, uNoiseScale, uFlickerSpeed, uWaveAmp, uWaveTilt;
+			varying vec2 vUv;
+			float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+			void main(){
+				vec3 diffuseCol = texture2D(tDiffuse, vUv).rgb;
+				vec3 otherCol = texture2D(tOther, vUv).rgb;
+				float n = (hash(vUv * vec2(600.0, 300.0) * uNoiseScale + uTime * uFlickerSpeed) - 0.5) * uGlitch * uJitter;
+				// uWaveTilt rotates the sweep axis from a bottom-to-top wipe (0)
+				// toward a near-vertical wipe (±1, ~80°) — sign picks which way
+				// it leans. The wave ripples along whichever axis now runs along
+				// the boundary itself.
+				float angle = uWaveTilt * radians(80.0);
+				vec2 dir = vec2(sin(angle), cos(angle));
+				float proj = vUv.x * dir.x + vUv.y * dir.y;
+				float perp = vUv.x * dir.y - vUv.y * dir.x;
+				float wave = (sin(perp * 15.7 + uTime * 0.4) * 0.6 + sin(perp * 6.3 - uTime * 0.25) * 0.4) * uWaveAmp;
+				// proj's reach across the unit square shifts off the [0,1] range
+				// once dir.x goes negative, so bound it from dir's sign rather
+				// than assuming 0 is the minimum
+				float minProj = min(0.0, dir.x);
+				float maxProj = max(0.0, dir.x) + dir.y;
+				float lineY = mix(minProj - uSoftness * 2.0, maxProj + uSoftness * 2.0, uWipe);
+				float mask = 1.0 - smoothstep(lineY - uSoftness, lineY + uSoftness, proj + n + wave);
+				vec3 heroCol = uCurrentIsShowcase > 0.5 ? otherCol : diffuseCol;
+				vec3 showcaseCol = uCurrentIsShowcase > 0.5 ? diffuseCol : otherCol;
+				gl_FragColor = vec4(mix(heroCol, showcaseCol, mask), 1.0);
+			}
+		`
+	});
+	wipePass.uniforms.tOther.value = otherRT.texture;
+	composer.addPass(wipePass);
+
 	const bloomPass = new UnrealBloomPass(
 		new THREE.Vector2(window.innerWidth, initH),
 		config.bloom, 0.6, 0.85
@@ -1358,24 +1562,49 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 			uTime: { value: 0 },
 			uGrain: { value: config.grain },
 			uChroma: { value: config.chroma },
-			uAspect: { value: window.innerWidth / initH }
+			uAspect: { value: window.innerWidth / initH },
+			uTransition: { value: 0 },              // 0..1 hero→showcase glitch amount, driven by scroll
+			uTransitionChroma: { value: config.transitionChroma },
+			uTransitionStreak: { value: config.transitionStreak },
+			uVignetteOuter: { value: config.vignetteOuter },
+			uVignetteInner: { value: config.vignetteInner }
 		},
 		vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
 		fragmentShader: `
 			uniform sampler2D tDiffuse;
-			uniform float uTime, uGrain, uChroma, uAspect;
+			uniform float uTime, uGrain, uChroma, uAspect, uTransition, uTransitionChroma, uTransitionStreak, uVignetteOuter, uVignetteInner;
 			varying vec2 vUv;
 			float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+			vec3 sampleChroma(vec2 uv, vec2 d, float chroma){
+				vec2 off = d * dot(d, d) * chroma;
+				vec3 c;
+				c.r = texture2D(tDiffuse, uv + off).r;
+				c.g = texture2D(tDiffuse, uv).g;
+				c.b = texture2D(tDiffuse, uv - off).b;
+				return c;
+			}
 			void main(){
 				vec2 uv = vUv;
 				vec2 d = uv - 0.5;
-				float r2 = dot(d, d);
-				vec2 off = d * r2 * uChroma;
-				vec3 col;
-				col.r = texture2D(tDiffuse, uv + off).r;
-				col.g = texture2D(tDiffuse, uv).g;
-				col.b = texture2D(tDiffuse, uv - off).b;
-				col *= smoothstep(1.15, 0.35, length(d * vec2(uAspect, 1.0)));
+				float chroma = uChroma + uTransition * uTransitionChroma;
+				vec3 col = sampleChroma(uv, d, chroma);
+				// directional zoom-streak: radial multi-tap smear pulled toward center,
+				// ramped in with the transition — the "chromatic distort" glitch on scroll
+				if (uTransition > 0.001) {
+					vec2 dir = d * uTransition * uTransitionStreak;
+					vec3 streak = col;
+					float wsum = 1.0;
+					const int TAPS = 12;
+					for (int i = 1; i <= TAPS; i++) {
+						float ti = float(i) / float(TAPS);
+						float w = 1.0 - ti;   // nearer samples weigh more — a fading trail instead of N equal-strength echoes
+						vec2 suv = uv - dir * ti;
+						streak += sampleChroma(suv, suv - 0.5, chroma) * w;
+						wsum += w;
+					}
+					col = mix(col, streak / wsum, uTransition);
+				}
+				col *= smoothstep(uVignetteOuter, uVignetteInner, length(d * vec2(uAspect, 1.0)));
 				float g = hash(uv * vec2(1920.0, 1080.0) + uTime) - 0.5;
 				float lum = dot(col, vec3(0.299, 0.587, 0.114));
 				col += g * uGrain * (1.0 - smoothstep(0.25, 0.9, lum));
@@ -1391,15 +1620,6 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 	let lastElapsed = 0;
 	function tick() {
 		const now = performance.now();
-		if (revealStart !== null) {
-			const rt = Math.min(1, (now - revealStart) / REVEAL_MS);
-			const pct = easeOutCubic(rt) * 100;
-			const feather = 8;   // percentage-points of soft edge
-			const g = `radial-gradient(circle farthest-corner at 50% 50%, transparent 0%, transparent ${Math.max(0, pct - feather)}%, white ${pct}%, white 100%)`;
-			preloaderEl.style.maskImage = g;
-			preloaderEl.style.webkitMaskImage = g;
-			if (rt >= 1) revealStart = null;
-		}
 		updateIntroSequence(now);
 		const t = clock.getElapsedTime();
 		const dt = Math.min(0.05, t - lastElapsed);
@@ -1412,14 +1632,19 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		const rotProgress      = Math.min(scrollProgress / cr, 1) * (cr / sr); // keeps spinning through the veil sweep, freezes once dark
 		const outroProgress    = Math.min(1, Math.max(0, (scrollProgress - sr) / (cr - sr)));
 		const showcaseProgress = Math.max(0, (scrollProgress - cr) / (1 - cr));
+		// same 0..1 span as showcaseProgress but starting at the outro (sr) instead
+		// of the showcase boundary (cr), so the carousel is already mid-spin by the
+		// time the wipe finishes instead of snapping from a standstill
+		const spinProgress = Math.max(0, Math.min(1, (scrollProgress - sr) / (1 - sr)));
 		easedProgress  += (rotProgress      - easedProgress)  * 0.08;
 		easedScene     += (sceneProgress    - easedScene)     * 0.08;
-		// the veil and showcase ease out faster than in, so scrolling back up
-		// reveals the hero without a long black dwell
+		// the wipe and showcase ease out faster than in, so scrolling back up
+		// reveals the hero without a long dwell
 		easedOutro     += (outroProgress    - easedOutro)     * (outroProgress    < easedOutro    ? Math.max(config.outroSpeed, 0.2) : config.outroSpeed);
 		easedShowcase  += (showcaseProgress - easedShowcase)  * (showcaseProgress < easedShowcase ? 0.2 : 0.08);
-		// while the veil is in showcase mode, keep the sweep pinned shut so that
-		// scrolling back up hands off through solid black instead of popping
+		easedSpin      += (spinProgress     - easedSpin)      * (spinProgress     < easedSpin     ? 0.2 : 0.08);
+		// while in showcase mode, keep the wipe pinned shut so that scrolling
+		// back up hands off through the wipe boundary instead of popping
 		if (easedShowcase > 0.001) easedOutro = 1;
 
 		if (gyro.enabled && gyro.hasReading) {
@@ -1440,29 +1665,13 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 			groundPivot.rotation.y = easedProgress * Math.PI * config.groundTurns;
 		}
 
-		// outro veil: constant-width soft band sweeps right → left + uniform dim
-		if (easedShowcase > 0.001 || showcaseProgress > 0) {
-			// showcase phase: veil lifts off the black to reveal the carousel
-			const a = Math.max(0, 1 - easedShowcase / 0.15);
-			document.getElementById("outro-veil").style.background =
-				a > 0.001 ? `rgba(0,0,0,${a.toFixed(3)})` : "transparent";
-		} else if (outroProgress > 0) {
-			const d = easedOutro;
-			const soft = 0.5;
-			const lead = (1 - d) * (1 + soft) - soft;
-			const at = (p) => ((lead + soft * p) * 100).toFixed(1);
-			const full = (d * config.outroDim).toFixed(3);
-			document.getElementById("outro-veil").style.background =
-				`linear-gradient(to right,
-					rgba(0,0,0,0)    ${at(0)}%,
-					rgba(0,0,0,0.15) ${at(0.25)}%,
-					rgba(0,0,0,0.5)  ${at(0.5)}%,
-					rgba(0,0,0,0.85) ${at(0.75)}%,
-					rgba(0,0,0,1)    ${at(1)}%),
-				linear-gradient(rgba(0,0,0,${full}), rgba(0,0,0,${full}))`;
-		} else {
-			document.getElementById("outro-veil").style.background = "transparent";
-		}
+		// glitch transition: builds through the outro window (chroma + streak ramp
+		// up in the grade shader below), then eases off quickly once the showcase
+		// phase takes over — same timing shape as the old veil, just driving a
+		// shader distortion instead of a black DOM overlay
+		const transitionAmt = easedShowcase > 0.001 || showcaseProgress > 0
+			? Math.max(0, 1 - easedShowcase / config.transitionRelease)
+			: easedOutro;
 
 		scene.backgroundRotation.y =
 			config.skyAngle + easedProgress * Math.PI * config.skyTurns + t * config.skyDrift - pointer.x * 0.15;
@@ -1477,70 +1686,106 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		camera.position.y = 0.3 - pointer.y * 0.4;
 		camera.lookAt(0, 0, 0);
 
+		// during the intro the warm haze/mist ride the same eased ramp as the sky
+		// (0 while dark, up to full with the reveal) so they never pop in at the end
+		const introEnvFade = introBgIntensity !== null ? introBgIntensity : 1;
 		mistLayers.forEach((m) => {
 			m.position.x = m.userData.baseX + Math.sin(t * 0.05 + m.userData.seed) * 2.0;
-			m.material.opacity = 0.045 + 0.03 * (0.5 + 0.5 * Math.sin(t * 0.2 + m.userData.seed));
+			m.material.opacity = (0.045 + 0.03 * (0.5 + 0.5 * Math.sin(t * 0.2 + m.userData.seed))) * introEnvFade;
 		});
 
 		gradePass.uniforms.uGrain.value = config.grain;
 		gradePass.uniforms.uChroma.value = config.chroma;
 		gradePass.uniforms.uTime.value = t;
+		gradePass.uniforms.uTransition.value = transitionAmt;
+		gradePass.uniforms.uTransitionChroma.value = config.transitionChroma;
+		gradePass.uniforms.uTransitionStreak.value = config.transitionStreak;
+		gradePass.uniforms.uVignetteOuter.value = config.vignetteOuter;
+		gradePass.uniforms.uVignetteInner.value = config.vignetteInner;
 		bloomPass.strength = introBloomStrength !== null ? introBloomStrength : config.bloom;
 		bloomPass.enabled = config.bloom > 0;
 
 		// phase switch: dark showcase vs. the original scene
 		const showcaseActive = easedShowcase > 0.001 || showcaseProgress > 0;
-		document.querySelector(".headline").style.opacity = showcaseActive ? "0" : "1";
+		// don't touch the headline's opacity until its own intro reveal has
+		// started — an inline style here beats the plain (non-animated)
+		// .pre-reveal class rule by CSS specificity and would show it early
+		if (crossfadeStarted) document.querySelector(".headline").style.opacity = showcaseActive ? "0" : "1";
 		showcaseGroup.visible = columnGroup.visible = sectionDust.points.visible = showcaseActive;
 		core.visible = groundPivot.visible = particles.points.visible =
 			haze.visible = mistGroup.visible = !showcaseActive;
-		if (showcaseActive) {
-			scene.background = equirect;   // keep the hero's rich sky in the showcase too
-			// sweeps with the column spin (amplified) plus a continuous drift
-			scene.backgroundRotation.y = columnGroup.rotation.y * config.glowSpin + t * config.skySpeed;
-			scene.environmentRotation.y = scene.backgroundRotation.y;   // reflections track the sky
-			// light the column FROM the sun so its bright side tracks the glow
-			const sunAz = scene.backgroundRotation.y + config.skyGlowX * Math.PI * 2;
-			keyLight.position.set(Math.sin(sunAz) * keyLightDist, keyLightBase.y, Math.cos(sunAz) * keyLightDist);
-			updateShowcase(dt);
-			const appear = Math.min(1, easedShowcase / 0.2);
-			sectionDust.mat.uniforms.u_time.value = flakeTime;
-			sectionDust.mat.uniforms.u_opacity.value = appear;
-			// the dust rotates with the carousel as you scroll (a touch slower for
-			// depth parallax) so the field turns with us, plus a gentle idle drift
-			sectionDust.points.rotation.y = showcaseGroup.rotation.y * 0.6 + t * 0.02;
-		} else {
-			keyLight.position.copy(keyLightBase);   // restore the hero's fixed key light
-			scene.background = equirect;
+		scene.background = equirect;   // keep the hero's rich sky in the showcase too
+		// carousel pose + dust uniforms run unconditionally (cheap, harmless while
+		// invisible) so the showcase is already correctly posed for the transition
+		// wipe's preview render below, not just once showcaseActive flips true
+		updateShowcase(dt);
+		const appear = Math.min(1, easedShowcase / 0.2);
+		sectionDust.mat.uniforms.u_time.value = flakeTime;
+		sectionDust.mat.uniforms.u_opacity.value = appear;
+		// the dust rotates with the carousel as you scroll (a touch slower for
+		// depth parallax) so the field turns with us, plus a gentle idle drift
+		sectionDust.points.rotation.y = showcaseGroup.rotation.y * 0.6 + t * 0.02;
+		applyLighting(showcaseActive, t);
+
+		// intro override: while the wireframe particles are showing, dim the
+		// real sky so they read as "particles on black" first, then the same
+		// texture ramps back up to full brightness as part of the crossfade
+		// (see updateIntroSequence()). Haze/mist fade with the same ramp via
+		// introEnvFade above — opacity 0 on an additive plane renders nothing,
+		// so the dark phase stays pure black without visibility toggles.
+		if (introBgIntensity !== null) {
+			scene.backgroundIntensity = introBgIntensity;
+			hazeMat.opacity = config.haze * introBgIntensity;
 		}
 
-		// intro override: while the wireframe particles are showing, keep the
-		// scene dark behind them (instead of the warm sky/haze/mist above) so
-		// they read as "particles on black" first, then this color lerps back
-		// toward the real sky as part of the crossfade (see updateIntroSequence())
-		if (introBgColor !== null) {
-			scene.background = introBgColor;
-			haze.visible = false;
-			mistGroup.visible = false;
+		// capture the "opposite" scene state for the wipe composite, only while
+		// actually inside the outro↔showcase transition window (zero cost outside it)
+		wipePass.uniforms.uTime.value = t;
+		wipePass.uniforms.uWipe.value = easedOutro;
+		wipePass.uniforms.uGlitch.value = transitionAmt;
+		wipePass.uniforms.uCurrentIsShowcase.value = showcaseActive ? 1 : 0;
+		wipePass.uniforms.uJitter.value = config.wipeJitter;
+		wipePass.uniforms.uSoftness.value = config.wipeSoftness;
+		wipePass.uniforms.uNoiseScale.value = config.wipeNoiseScale;
+		wipePass.uniforms.uFlickerSpeed.value = config.wipeFlickerSpeed;
+		wipePass.uniforms.uWaveAmp.value = config.wipeWaveAmp;
+		wipePass.uniforms.uWaveTilt.value = config.wipeWaveTilt;
+		if (outroProgress > 0 && outroProgress < 1) {
+			const other = !showcaseActive;
+			showcaseGroup.visible = columnGroup.visible = sectionDust.points.visible = other;
+			core.visible = groundPivot.visible = particles.points.visible =
+				haze.visible = mistGroup.visible = !other;
+			applyLighting(other, t);
+			renderer.setRenderTarget(otherRT);
+			renderer.render(scene, camera);
+			renderer.setRenderTarget(null);
+			showcaseGroup.visible = columnGroup.visible = sectionDust.points.visible = showcaseActive;
+			core.visible = groundPivot.visible = particles.points.visible =
+				haze.visible = mistGroup.visible = !showcaseActive;
+			applyLighting(showcaseActive, t);
 		}
 
-		const sceneHidden = easedOutro > 0.995 && !showcaseActive;
-		if (!sceneHidden) {
-			if (core.visible) {   // glass FBO passes are pointless (and expensive) once the scene is dark
-				const oldTone = renderer.toneMapping;
-				for (const g of glassMeshes) {
-					g.mat.time = t;
-					g.mesh.material = discard;
-					renderer.toneMapping = THREE.NoToneMapping;
-					renderer.setRenderTarget(g.fbo);
-					renderer.render(scene, camera);
-					renderer.setRenderTarget(null);
-					renderer.toneMapping = oldTone;
-					g.mesh.material = g.mat;
-				}
+		if (core.visible) {   // glass FBO passes are pointless (and expensive) once the scene is dark
+			const oldTone = renderer.toneMapping;
+			// keep the intro's bright additive particles OUT of the glass's
+			// refraction buffer — refracting them produces an opaque,
+			// shattered-looking slab. (No-op after the intro: wireframePairs
+			// is empty.) This lets the real glass appear at any point during
+			// the intro without ever refracting the transition.
+			for (const p of wireframePairs) p.points.visible = false;
+			for (const g of glassMeshes) {
+				g.mat.time = t;
+				g.mesh.material = discard;
+				renderer.toneMapping = THREE.NoToneMapping;
+				renderer.setRenderTarget(g.fbo);
+				renderer.render(scene, camera);
+				renderer.setRenderTarget(null);
+				renderer.toneMapping = oldTone;
+				g.mesh.material = g.mat;
 			}
-			composer.render();
+			for (const p of wireframePairs) p.points.visible = true;
 		}
+		composer.render();
 
 		fpsFrames++;
 		if (t - fpsLast >= 0.5) {
@@ -1576,6 +1821,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		renderer.setSize(w, h);
 		composer.setSize(w, h);
 		bloomPass.setSize(w, h);
+		otherRT.setSize(w, h);
 		gradePass.uniforms.uAspect.value = w / h;
 		glassMeshes.forEach((g) => g.fbo.setSize(Math.round(w * fboScale), Math.round(h * fboScale)));
 		particles.mat.uniforms.u_size.value = config.particleSize * renderer.getPixelRatio();
@@ -1601,6 +1847,8 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 	document.getElementById("panelToggle").addEventListener("click", () => {
 		panel.classList.toggle("collapsed");
 	});
+
+	document.getElementById("replayBtn").addEventListener("click", () => beginIntro());
 
 	const copyBtn = document.getElementById("copyBtn");
 	copyBtn.addEventListener("click", () => {
@@ -1662,7 +1910,17 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 	bindSlider("s-outro", "v-outro", (v) => { config.outroSpeed = v; }, (v) => v.toFixed(2));
 	bindSlider("s-outrostart", "v-outrostart", (v) => { config.outroStart = v; }, (v) => Math.round(v) + "vh");
 	bindSlider("s-track", "v-track", (v) => { config.trackHeight = v; document.querySelector(".scroll-track").style.height = v + "vh"; }, (v) => Math.round(v) + "vh");
-	bindSlider("s-outrodim", "v-outrodim", (v) => { config.outroDim = v; }, (v) => v.toFixed(2));
+	bindSlider("s-transchroma", "v-transchroma", (v) => { config.transitionChroma = v; }, (v) => v.toFixed(2));
+	bindSlider("s-transstreak", "v-transstreak", (v) => { config.transitionStreak = v; }, (v) => v.toFixed(2));
+	bindSlider("s-wipejitter", "v-wipejitter", (v) => { config.wipeJitter = v; }, (v) => v.toFixed(2));
+	bindSlider("s-wipesoft", "v-wipesoft", (v) => { config.wipeSoftness = v; }, (v) => v.toFixed(3));
+	bindSlider("s-wipenoise", "v-wipenoise", (v) => { config.wipeNoiseScale = v; }, (v) => v.toFixed(2));
+	bindSlider("s-wipeflicker", "v-wipeflicker", (v) => { config.wipeFlickerSpeed = v; }, (v) => v.toFixed(2));
+	bindSlider("s-wipewave", "v-wipewave", (v) => { config.wipeWaveAmp = v; }, (v) => v.toFixed(3));
+	bindSlider("s-wavetilt", "v-wavetilt", (v) => { config.wipeWaveTilt = v; }, (v) => v.toFixed(2));
+	bindSlider("s-transrelease", "v-transrelease", (v) => { config.transitionRelease = v; }, (v) => v.toFixed(2));
+	bindSlider("s-vigouter", "v-vigouter", (v) => { config.vignetteOuter = v; }, (v) => v.toFixed(2));
+	bindSlider("s-viginner", "v-viginner", (v) => { config.vignetteInner = v; }, (v) => v.toFixed(2));
 	bindSlider("s-showstart", "v-showstart", (v) => { config.showcaseStart = v; }, (v) => Math.round(v) + "vh");
 	bindSlider("s-showrad", "v-showrad", (v) => { config.showcaseRadius = v; }, (v) => v.toFixed(1));
 	bindSlider("s-showpitch", "v-showpitch", (v) => { config.showcasePitch = v; }, (v) => v.toFixed(1));

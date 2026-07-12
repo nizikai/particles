@@ -31,14 +31,23 @@ html.loading, html.loading body { overflow: hidden; height: 100%; }
 	align-items: center;
 	justify-content: center;
 	background: var(--bg-top);
-	transition: opacity 0.5s ease; /* duration overridden inline by main.js to match REVEAL_MS */
-	mask-image: radial-gradient(circle at 50% 50%, white 0%, white 100%);
-	-webkit-mask-image: radial-gradient(circle at 50% 50%, white 0%, white 100%);
+	transition: opacity 0.3s ease;
 }
 
+/* hidden the instant the particle intro begins — the scene behind it is
+   already solid black at that point (see introBgColor in main.js), so the
+   swap is imperceptible; the particles do the actual "reveal" by randomly
+   spawning in on top, not this div */
 #preloader.hidden { opacity: 0; pointer-events: none; }
 
 .preloader-mark {
+	position: fixed;
+	inset: 0;
+	z-index: 51;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	pointer-events: none;
 	margin: 0;
 	font-family: "Clash Grotesk", "Avenir Next", system-ui, sans-serif;
 	font-weight: 500;
@@ -81,14 +90,6 @@ html.loading, html.loading body { overflow: hidden; height: 100%; }
 	display: block;
 	z-index: 1;
 	touch-action: pan-y;
-}
-
-#outro-veil {
-	position: fixed;
-	inset: 0;
-	z-index: 3;
-	pointer-events: none;
-	background: transparent;
 }
 
 .overlay {
