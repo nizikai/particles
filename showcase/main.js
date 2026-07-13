@@ -212,7 +212,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		}
 	}
 
-	function makeWireframePoints(mesh, refDiag, mat, surfSpacingWorld, edgeThreshold = 20, edgeDensity = 1, localScale = 1) {
+	function makeWireframePoints(mesh, refDiag, mat, surfSpacingWorld, edgeThreshold = 20, edgeDensity = 1, localScale = 1, verticalEdges = false) {
 		// splat dots along the mesh's actual edges (not raw vertices) — this
 		// traces the same recognizable silhouette the old EdgesGeometry lines
 		// did, just rendered as a dotted line instead of a solid one.
@@ -237,35 +237,52 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		const spawnDelays = [];
 		const a = new THREE.Vector3(), b = new THREE.Vector3();
 		const dir = new THREE.Vector3(), ref = new THREE.Vector3(), u = new THREE.Vector3(), v = new THREE.Vector3();
-		for (let i = 0; i < src.count; i += 2) {
-			a.fromBufferAttribute(src, i);
-			b.fromBufferAttribute(src, i + 1);
-			const edgeLen = a.distanceTo(b);
-			if (edgeLen < 1e-6) continue;   // degenerate zero-length edge — normalize() below would divide by zero into NaN
-			const steps = Math.max(1, Math.round(edgeLen / spacing));
-			// stable perpendicular basis for this edge, so jitter can push dots
-			// sideways off the line rather than just along it
-			dir.subVectors(b, a).normalize();
-			ref.set(0, 1, 0);
-			if (Math.abs(dir.dot(ref)) > 0.99) ref.set(1, 0, 0);
-			u.crossVectors(dir, ref).normalize();
-			v.crossVectors(dir, u);
-			for (let s = 0; s <= steps; s++) {
-				// irregular spacing along the edge (not perfectly even steps) plus
-				// a small perpendicular offset — organic scatter, not a plotted line
-				const t = THREE.MathUtils.clamp((s + (Math.random() - 0.5) * 0.35) / steps, 0, 1);
-				const angle = Math.random() * Math.PI * 2;
-				const r = Math.random() * jitterRadius;
-				coords.push(
-					a.x + (b.x - a.x) * t + (u.x * Math.cos(angle) + v.x * Math.sin(angle)) * r,
-					a.y + (b.y - a.y) * t + (u.y * Math.cos(angle) + v.y * Math.sin(angle)) * r,
-					a.z + (b.z - a.z) * t + (u.z * Math.cos(angle) + v.z * Math.sin(angle)) * r
-				);
-				seeds.push(Math.random());
-				spawnDelays.push(Math.random());
+		const splat = (pairs, keep, splatSpacing = spacing) => {
+			for (let i = 0; i < pairs.count; i += 2) {
+				a.fromBufferAttribute(pairs, i);
+				b.fromBufferAttribute(pairs, i + 1);
+				const edgeLen = a.distanceTo(b);
+				if (edgeLen < 1e-6) continue;   // degenerate zero-length edge — normalize() below would divide by zero into NaN
+				if (keep && !keep(edgeLen)) continue;
+				const steps = Math.max(1, Math.round(edgeLen / splatSpacing));
+				// stable perpendicular basis for this edge, so jitter can push dots
+				// sideways off the line rather than just along it
+				dir.subVectors(b, a).normalize();
+				ref.set(0, 1, 0);
+				if (Math.abs(dir.dot(ref)) > 0.99) ref.set(1, 0, 0);
+				u.crossVectors(dir, ref).normalize();
+				v.crossVectors(dir, u);
+				for (let s = 0; s <= steps; s++) {
+					// irregular spacing along the edge (not perfectly even steps) plus
+					// a small perpendicular offset — organic scatter, not a plotted line
+					const t = THREE.MathUtils.clamp((s + (Math.random() - 0.5) * 0.35) / steps, 0, 1);
+					const angle = Math.random() * Math.PI * 2;
+					const r = Math.random() * jitterRadius;
+					coords.push(
+						a.x + (b.x - a.x) * t + (u.x * Math.cos(angle) + v.x * Math.sin(angle)) * r,
+						a.y + (b.y - a.y) * t + (u.y * Math.cos(angle) + v.y * Math.sin(angle)) * r,
+						a.z + (b.z - a.z) * t + (u.z * Math.cos(angle) + v.z * Math.sin(angle)) * r
+					);
+					seeds.push(Math.random());
+					spawnDelays.push(Math.random());
+				}
 			}
-		}
+		};
+		splat(src);
 		edges.dispose();   // only used to derive the dot coordinates above, never rendered itself
+		if (verticalEdges) {
+			// second, fully permissive pass (1° threshold) kept only for near-vertical
+			// runs, traced denser than the sharp pass — column flutes and shaft lines
+			// sit below the sharp threshold, so without this the pillars read as
+			// stacked rings with nothing connecting them. Near-vertical sharp edges
+			// get traced by both passes (the 1° set is a superset) — the doubled dots
+			// just read as slightly brighter silhouettes.
+			const soft = new THREE.EdgesGeometry(mesh.geometry, 1);
+			// 0.6× spacing: the shaft is stacked drum segments, so each vertical run is
+			// short — denser dots are what bridge the drum joints into continuous lines
+			splat(soft.attributes.position, (len) => Math.abs(b.y - a.y) / len > 0.7, spacing * 0.6);
+			soft.dispose();
+		}
 		if (surfSpacingWorld) sampleSurfaceDots(mesh, surfSpacingWorld, coords, seeds, spawnDelays);
 		const geo = new THREE.BufferGeometry();
 		geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(coords), 3));
@@ -315,7 +332,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 			// not — divide out the node scale between groundObj's root and each mesh
 			const rootScale = groundObj.getWorldScale(new THREE.Vector3()).x;
 			groundObj.traverse((o) => {
-				if (o.isMesh) wireframePairs.push({ mesh: o, points: makeWireframePoints(o, groundMaxDim, wireframeParticleMat, surfSpacing, edgeThreshold, config.sceneDetail, o.getWorldScale(new THREE.Vector3()).x / rootScale), isGlass: false });
+				if (o.isMesh) wireframePairs.push({ mesh: o, points: makeWireframePoints(o, groundMaxDim, wireframeParticleMat, surfSpacing, edgeThreshold, config.sceneDetail, o.getWorldScale(new THREE.Vector3()).x / rootScale, true), isGlass: false });
 			});
 		}
 		// rewrite the (random) spawn delays into a radial sweep: dots near the
