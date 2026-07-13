@@ -71,7 +71,8 @@ html.loading, html.loading body { overflow: hidden; height: 100%; }
 }
 
 .preloader-mark.leaving {
-	animation: preloader-mark-out 380ms cubic-bezier(0.4, 0, 1, 1) forwards;
+	/* slow, eased lapse — the text dissolves while the particles spawn in */
+	animation: preloader-mark-out 1100ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }
 
 @keyframes preloader-mark-out {
@@ -120,10 +121,12 @@ html.loading, html.loading body { overflow: hidden; height: 100%; }
 /* held hidden until the preloader clears; main.js swaps this for .reveal */
 .headline.pre-reveal { opacity: 0; filter: blur(14px); transform: scale(0.75); }
 
+/* opacity gets a near-linear curve — the springy ease-out (kept for scale)
+   jumps to ~75% opacity almost instantly, which reads as popping in at 75%. */
 .headline.reveal {
 	animation:
-		headline-in 2s cubic-bezier(0.16, 1, 0.3, 1),
-		headline-scale 2s cubic-bezier(0.16, 1, 0.3, 1);
+		headline-in 2.4s cubic-bezier(0.33, 0, 0.25, 1) backwards,
+		headline-scale 2.4s cubic-bezier(0.16, 1, 0.3, 1) backwards;
 }
 
 @keyframes headline-in {

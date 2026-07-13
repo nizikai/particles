@@ -23,6 +23,20 @@
 			<div class="ctrl">
 				<button class="copy-btn" id="replayBtn">▶ Replay intro</button>
 			</div>
+			<div class="ctrl">
+				<label>Intro duration <span class="val" id="v-introdur">6.2s</span></label>
+				<input type="range" id="s-introdur" min="0.3" max="3" step="0.1" value="1" />
+			</div>
+			<div class="ctrl">
+				<label>Intro particles <span class="val" id="v-introdens">1.0×</span></label>
+				<input type="range" id="s-introdens" min="0.3" max="3" step="0.1" value="1" />
+				<div class="hint">Density of the intro dots. Takes effect on next Replay.</div>
+			</div>
+			<div class="ctrl">
+				<label>Scene detail <span class="val" id="v-scenedet">2.0×</span></label>
+				<input type="range" id="s-scenedet" min="0.5" max="3" step="0.1" value="2" />
+				<div class="hint">Dotted edge wireframe of the scene — denser edge lines, thinner surface fill (not the logo). Takes effect on next Replay.</div>
+			</div>
 			<div class="ctrl upload-ctrl">
 				<label>Ground model</label>
 				<input type="file" id="upload" accept=".glb,.gltf" />
@@ -296,7 +310,6 @@
 		}
 	}
 	</script>
-	<script>window.__TRIAL__ = true;</script>
 	<script type="module" src="main.js"></script>
 </body>
 </html>

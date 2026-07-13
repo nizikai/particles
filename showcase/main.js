@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { KTX2Loader } from "three/addons/loaders/KTX2Loader.js";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
+import { MeshSurfaceSampler } from "three/addons/math/MeshSurfaceSampler.js";
 import { MeshTransmissionMaterial, DiscardMaterial } from "./MeshTransmissionMaterial.js";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
@@ -29,14 +30,16 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 	// --- intro sequence: a particle-traced version of the scene that randomly
 	// spawns in on a dark screen, then crossfades into the final rendered
 	// scene. Driven by tick(), not a separate rAF loop (see updateIntroSequence()).
-	const PARTICLE_SPAWN_MS = 1400;  // window over which particles individually glow in, staggered
-	const WIREFRAME_HOLD_MS = 2000;  // how long the particle scene sits before crossfading (spawning happens within this)
-	const CROSSFADE_MS = 2600;       // particle fade-out + real-mesh pop-in + bloom ease-down — slow, staged, not instant
+	const PARTICLE_SPAWN_MS = 2600;  // window over which particles individually glow in, staggered
+	const WIREFRAME_HOLD_MS = 2900;  // how long the particle scene sits before crossfading (spawning happens within this)
+	const CROSSFADE_MS = 2100;       // particle fade-out + real-mesh pop-in + bloom ease-down — slow, staged, not instant
 	// a depth-fog "wall" that starts right in front of the camera and recedes
 	// backward through the whole scene over the crossfade, so real geometry
 	// emerges from front to back instead of popping in all at once
 	const FOG_BAND_WIDTH = 6;    // depth-units the fog transition spans at any instant
-	const FOG_FAR_START = 1.5;   // where the fog wall's far edge sits at crossfade start — hides essentially everything
+	const FOG_FAR_START = 0.25;  // where the fog wall's far edge sits at crossfade start — at the camera plane, so
+	                             // NOTHING is in front of it on frame one (the foreground pillars reach closer than
+	                             // 1.5 units, and anything nearer than the far edge pops in partially unfogged)
 	const FOG_FAR_END = 36;      // where it ends up at crossfade end — the band's *near* edge (far − FOG_BAND_WIDTH)
 	                             // must also clear the ground's ~26-unit back edge, or removing scene.fog at
 	                             // finish visibly unfogs the back wall in one frame
@@ -45,14 +48,15 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 	// stable (bright, no fog). Reveal it too early and it refracts the dim/foggy
 	// transition into an opaque, gold, shattered-looking slab. Its particle
 	// stand-in holds until the handoff, masked by a bloom flash.
+	const DOT_WIPE_DELAY = 0.3;      // fraction of the crossfade before scene dots start clearing (they linger over already-revealed geometry while it's still dim)
+	const DOT_WIPE_BAND = 9;         // depth-units the dot fade spans — wider than the fog band for a softer trailing edge
 	const logoRevealT = 0.1;         // fraction into the crossfade to swap logo particles → real glass (hand-tuned)
-	const LOGO_FLASH_BOOST = 0.3;    // extra bloom shimmer right at that swap, to mask it
-	const LOGO_FLASH_WIDTH = 0.08;   // width of that flash, in crossfade-fraction units
-	const BLOOM_BOOST = 0.9;         // bloom strength while the particles are glowing (config.bloom is normally 0.15)
+	const BLOOM_BOOST = 0.35;        // bloom strength while the particles are glowing (config.bloom is normally 0.15) — much higher and the logo's dense dot corners bloom into blocky, pixelated halos
 	let introStart = null;           // performance.now() timestamp when hidePreloader() fired; null = not started
 	let introBloomStrength = null;   // non-null overrides bloomPass.strength for the intro; null = use config.bloom
 	let crossfadeStarted = false;
 	let logoRevealed = false;
+	let headlineStarted = false;
 	let introDone = false;
 	// non-null overrides scene.backgroundIntensity (+ forces haze/mist hidden)
 	// for the intro — the real equirect texture stays as scene.background the
@@ -69,6 +73,12 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 	const wireframeParticleMat = new THREE.ShaderMaterial({
 		transparent: true,
 		depthWrite: false,
+		// no depth test either: when the real meshes flip visible at crossfade
+		// start they instantly z-write, which in ONE frame culls the dots lying
+		// on their surfaces and hard-occludes everything behind the foreground
+		// pillars — a visible snap. Additive dust doesn't need occlusion; the
+		// front→back wipe retires each dot instead.
+		depthTest: false,
 		blending: THREE.AdditiveBlending,
 		uniforms: {
 			u_size: { value: 5.5 },
@@ -80,7 +90,13 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 			// on purpose — that dark end reads at nearly the same luminance as this
 			// scene's warm amber background/environment and disappears against it
 			u_colorA: { value: new THREE.Color(0xffb347) },
-			u_colorB: { value: new THREE.Color(0xfff2d9) }
+			u_colorB: { value: new THREE.Color(0xfff2d9) },
+			// depth wipe tracking the crossfade's fog wall: dots nearer than
+			// u_wipeNear are gone (their real surface is fully revealed), dots
+			// beyond u_wipeFar hold full. Defaults sit behind the camera so the
+			// whole field is visible until the crossfade drives them
+			u_wipeNear: { value: -2 },
+			u_wipeFar: { value: -1 }
 		},
 		vertexShader: `
 			uniform float u_size;
@@ -91,6 +107,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 			attribute float aSpawnDelay;
 			varying float vSeed;
 			varying float vSpawn;
+			varying float vDepth;
 			void main() {
 				vSeed = aSeed;
 				// each particle waits its own random delay (spread across u_spawnWindow),
@@ -99,6 +116,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 				float spawnStart = aSpawnDelay * u_spawnWindow;
 				vSpawn = clamp((u_spawnElapsed - spawnStart) / u_spawnFadeIn, 0.0, 1.0);
 				vec4 mv = modelViewMatrix * vec4(position, 1.0);
+				vDepth = -mv.z;
 				gl_Position = projectionMatrix * mv;
 				gl_PointSize = u_size * vSpawn / max(1.0, -mv.z);
 			}
@@ -107,10 +125,15 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 			uniform vec3 u_colorA;
 			uniform vec3 u_colorB;
 			uniform float u_opacity;
+			uniform float u_wipeNear;
+			uniform float u_wipeFar;
 			varying float vSeed;
 			varying float vSpawn;
+			varying float vDepth;
 			void main() {
 				if (vSpawn <= 0.0) discard;
+				float wipe = smoothstep(u_wipeNear, u_wipeFar, vDepth);
+				if (wipe <= 0.0) discard;
 				vec2 uv = gl_PointCoord - 0.5;
 				float d = dot(uv, uv);
 				float soft = exp(-d * 8.0);
@@ -118,7 +141,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 				if (soft < 0.02 && core < 0.02) discard;
 				vec3 col = mix(u_colorA, u_colorB, vSeed);
 				float a = soft * 0.7 + core * 1.4;
-				gl_FragColor = vec4(col, a * vSpawn * u_opacity);
+				gl_FragColor = vec4(col, a * vSpawn * u_opacity * wipe);
 			}
 		`
 	});
@@ -151,7 +174,45 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 	// showcase section, not in the hero view this intro plays over.
 	const WIREFRAME_DOT_SPACING_FRACTION = 0.02;   // dot spacing, as a fraction of the *whole object's* bounding diagonal
 
-	function makeWireframePoints(mesh, refDiag, mat) {
+	// the rotunda scene is almost all smooth curves (columns, ring) — at the
+	// 20° threshold below EdgesGeometry finds nearly nothing there, so the
+	// scene needs its surfaces splatted too, not just its (few) sharp edges
+	const SURFACE_DOT_SPACING_MULT = 0.51;  // fraction of the scene-diag-based spacing — tuned so surface dots (~10.7k) + edge dots (~9.9k) ≈ half the original ~41k scene total
+	const SURFACE_DOT_CAP = 60000;          // per-mesh safety cap — the whole rotunda is one mesh, so this has to fit its full surface
+
+	function sampleSurfaceDots(mesh, surfSpacingWorld, coords, seeds, spawnDelays) {
+		// area is measured in WORLD units (matrixWorld applied per-vertex) — the
+		// scene GLB is quantized, so its local units are meaningless for sizing
+		const pos = mesh.geometry.attributes.position;
+		const idx = mesh.geometry.index;
+		mesh.updateWorldMatrix(true, false);
+		const m = mesh.matrixWorld;
+		const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+		const ab = new THREE.Vector3(), ac = new THREE.Vector3();
+		let area = 0;
+		const triCount = (idx ? idx.count : pos.count) / 3;
+		for (let i = 0; i < triCount; i++) {
+			const i0 = idx ? idx.getX(i * 3) : i * 3;
+			const i1 = idx ? idx.getX(i * 3 + 1) : i * 3 + 1;
+			const i2 = idx ? idx.getX(i * 3 + 2) : i * 3 + 2;
+			a.fromBufferAttribute(pos, i0).applyMatrix4(m);
+			b.fromBufferAttribute(pos, i1).applyMatrix4(m);
+			c.fromBufferAttribute(pos, i2).applyMatrix4(m);
+			area += ab.subVectors(b, a).cross(ac.subVectors(c, a)).length() / 2;
+		}
+		const count = Math.min(SURFACE_DOT_CAP, Math.floor(area / (surfSpacingWorld * surfSpacingWorld)));
+		if (count < 1) return;
+		const sampler = new MeshSurfaceSampler(mesh).build();
+		const p = new THREE.Vector3();
+		for (let i = 0; i < count; i++) {
+			sampler.sample(p);
+			coords.push(p.x, p.y, p.z);
+			seeds.push(Math.random());
+			spawnDelays.push(Math.random());
+		}
+	}
+
+	function makeWireframePoints(mesh, refDiag, mat, surfSpacingWorld, edgeThreshold = 20, edgeDensity = 1, localScale = 1) {
 		// splat dots along the mesh's actual edges (not raw vertices) — this
 		// traces the same recognizable silhouette the old EdgesGeometry lines
 		// did, just rendered as a dotted line instead of a solid one.
@@ -163,9 +224,13 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		// curved surface (the glass logo especially) has thousands of nearly-flat
 		// triangle seams that count as "edges" at the default threshold, wildly
 		// overcounting; this keeps only genuinely sharp/silhouette edges
-		const edges = new THREE.EdgesGeometry(mesh.geometry, 20);
+		const edges = new THREE.EdgesGeometry(mesh.geometry, edgeThreshold);
 		const src = edges.attributes.position;   // consecutive pairs: [a0,b0, a1,b1, ...]
-		const spacing = refDiag * WIREFRAME_DOT_SPACING_FRACTION;
+		// localScale converts refDiag units → this geometry's local units. The scene
+		// GLB is quantized (positions span ~2 local units, real size lives in a ~7.3×
+		// node scale), so without it every edge measures ~7× too short, collapses to
+		// steps=1 (just its 2 endpoints), and the jitter smears ~7× too wide.
+		const spacing = refDiag * WIREFRAME_DOT_SPACING_FRACTION / (config.introDensity * edgeDensity * localScale);
 		const jitterRadius = spacing * 0.15;   // subtle — dots scatter loosely around the edge, not plotted exactly on it
 		const coords = [];
 		const seeds = [];
@@ -201,6 +266,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 			}
 		}
 		edges.dispose();   // only used to derive the dot coordinates above, never rendered itself
+		if (surfSpacingWorld) sampleSurfaceDots(mesh, surfSpacingWorld, coords, seeds, spawnDelays);
 		const geo = new THREE.BufferGeometry();
 		geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(coords), 3));
 		geo.setAttribute("aSpawnDelay", new THREE.BufferAttribute(new Float32Array(spawnDelays), 1));
@@ -217,7 +283,10 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 	}
 
 	function enterWireframePhase() {
-		wireframeParticleMat.uniforms.u_size.value = 3.0 * renderer.getPixelRatio();
+		// the scene's dots sit much deeper than the logo's (the shader divides
+		// point size by view depth), so they need a bigger base size to stay
+		// legible as shapes instead of sub-pixel dust
+		wireframeParticleMat.uniforms.u_size.value = 6.5 * renderer.getPixelRatio();
 		logoParticleMat.uniforms.u_size.value = 3.0 * renderer.getPixelRatio();
 		// isGlass tags let the crossfade treat the two differently: the ground
 		// reveals gradually via fog while its particles fade; the logo (which
@@ -226,10 +295,54 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		// two use separate materials (see updateIntroSequence()).
 		for (const g of glassMeshes) wireframePairs.push({ mesh: g.mesh, points: makeWireframePoints(g.mesh, coreMaxDim, logoParticleMat), isGlass: true });
 		if (groundObj) {
+			// surface-dot spacing in WORLD units, sized off the scene's world
+			// bounding diagonal (quantized GLB — local units are unusable)
+			const worldDiag = new THREE.Box3().setFromObject(groundObj).getSize(new THREE.Vector3()).length();
+			// sceneDetail shifts the scene from a filled point-cloud toward a dotted
+			// EDGE wireframe: higher = each sharp edge traced more densely while the
+			// surface scatter thins out (sparser spacing). Surface spacing scales with
+			// sceneDetail SQUARED so the fill drops off fast — count ∝ 1/spacing², so
+			// this is a ~1/detail⁴ falloff and by the top of the slider the edges
+			// dominate. ponytail: exponent is the knob — drop toward 1 for more fill.
+			const surfDetail = config.sceneDetail * config.sceneDetail;
+			const surfSpacing = worldDiag * WIREFRAME_DOT_SPACING_FRACTION * SURFACE_DOT_SPACING_MULT * surfDetail / config.introDensity;
+			// threshold is clamped at 20° — going lower would admit thousands of tiny
+			// tessellation-seam "edges" (flutes, capitals) that read as surface dust,
+			// which is exactly what high sceneDetail is supposed to strip away. Below
+			// 1× the threshold still rises, dropping edges for a sparser look.
+			const edgeThreshold = Math.max(20, 20 / config.sceneDetail);
+			// groundMaxDim is in raw-GLB-world units; the quantized meshes' geometry is
+			// not — divide out the node scale between groundObj's root and each mesh
+			const rootScale = groundObj.getWorldScale(new THREE.Vector3()).x;
 			groundObj.traverse((o) => {
-				if (o.isMesh) wireframePairs.push({ mesh: o, points: makeWireframePoints(o, groundMaxDim, wireframeParticleMat), isGlass: false });
+				if (o.isMesh) wireframePairs.push({ mesh: o, points: makeWireframePoints(o, groundMaxDim, wireframeParticleMat, surfSpacing, edgeThreshold, config.sceneDetail, o.getWorldScale(new THREE.Vector3()).x / rootScale), isGlass: false });
 			});
 		}
+		// rewrite the (random) spawn delays into a radial sweep: dots near the
+		// logo light up first and the spawn radiates outward through the scene,
+		// with enough jitter that the wavefront reads organic, not scanned
+		const sweepCenter = new THREE.Vector3(config.modelX, config.modelY, config.modelZ);
+		const wp = new THREE.Vector3();
+		const pairDists = [];
+		let maxDist = 0;
+		for (const { points } of wireframePairs) {
+			points.updateWorldMatrix(true, false);
+			const pos = points.geometry.attributes.position;
+			const dists = new Float32Array(pos.count);
+			for (let i = 0; i < pos.count; i++) {
+				dists[i] = wp.fromBufferAttribute(pos, i).applyMatrix4(points.matrixWorld).distanceTo(sweepCenter);
+				if (dists[i] > maxDist) maxDist = dists[i];
+			}
+			pairDists.push(dists);
+		}
+		wireframePairs.forEach(({ points }, k) => {
+			const delay = points.geometry.attributes.aSpawnDelay;
+			const dists = pairDists[k];
+			for (let i = 0; i < delay.count; i++) {
+				delay.setX(i, Math.min(1, (dists[i] / maxDist) * 0.75 + Math.random() * 0.25));
+			}
+			delay.needsUpdate = true;
+		});
 		introBloomStrength = BLOOM_BOOST;
 		introBgIntensity = 0;
 		scene.fog = new THREE.Fog(FOG_COLOR, 0.1, FOG_FAR_START);
@@ -273,16 +386,26 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		teardownIntroParticles();   // clear any in-progress intro (safe if empty)
 		crossfadeStarted = false;
 		logoRevealed = false;
+		headlineStarted = false;
 		introDone = false;
 		wireframeParticleMat.uniforms.u_opacity.value = 1;
 		logoParticleMat.uniforms.u_opacity.value = 1;
 		wireframeParticleMat.uniforms.u_spawnElapsed.value = 0;
 		logoParticleMat.uniforms.u_spawnElapsed.value = 0;
+		wireframeParticleMat.uniforms.u_wipeNear.value = -2;   // behind the camera = whole field visible again
+		wireframeParticleMat.uniforms.u_wipeFar.value = -1;
+		// the wordmark fades out as the particles start spawning — the reveal
+		// belongs to the particles alone, no text competing with it
 		const mark = document.querySelector(".preloader-mark");
-		if (mark) mark.classList.remove("leaving");
+		if (mark) {
+			mark.classList.remove("leaving");
+			void mark.offsetWidth;   // restart the out animation on replay
+			mark.classList.add("leaving");
+		}
 		const headline = document.querySelector(".headline");
 		headline.classList.remove("reveal");
 		headline.classList.add("pre-reveal");
+		headline.style.opacity = "";   // the scroll handler's inline opacity would beat .pre-reveal and ghost the text through the replay
 		enterWireframePhase();   // rebuild the particle stand-ins, dim the scene, set fog, hide the real meshes
 		introStart = performance.now();
 	}
@@ -304,8 +427,9 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		const elapsed = now - introStart;
 		wireframeParticleMat.uniforms.u_spawnElapsed.value = elapsed / 1000;
 		logoParticleMat.uniforms.u_spawnElapsed.value = elapsed / 1000;
-		const holdEnd = WIREFRAME_HOLD_MS;
-		const crossfadeEnd = holdEnd + CROSSFADE_MS;
+		const crossfadeMs = CROSSFADE_MS * config.introScale;
+		const holdEnd = WIREFRAME_HOLD_MS * config.introScale;
+		const crossfadeEnd = holdEnd + crossfadeMs;
 		if (elapsed < holdEnd) {
 			introBloomStrength = BLOOM_BOOST;
 			return;
@@ -315,23 +439,14 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 			// ground only — fog (below) hides it until the wall reaches each
 			// part; the glass logo stays as particles until the very end (below)
 			for (const { mesh, isGlass } of wireframePairs) if (!isGlass) mesh.visible = true;
-			// the wordmark lingers through the whole particle-on-black phase, and the
-			// hero headline only starts its own entrance once the hero itself appears
-			const mark = document.querySelector(".preloader-mark");
-			if (mark) mark.classList.add("leaving");
-			const headline = document.querySelector(".headline");
-			headline.classList.remove("pre-reveal");
-			headline.classList.add("reveal");
 		}
-		const ct = Math.min(1, (elapsed - holdEnd) / CROSSFADE_MS);
+		const ct = Math.min(1, (elapsed - holdEnd) / crossfadeMs);
 		// in-out, not ease-out: ease-out front-loads ~2/3 of the reveal into the
 		// first ~1/3 of the time, which is exactly what read as "snappy"
 		const e = easeInOutCubic(ct);
 		// hand off the logo particles → real glass at logoRevealT
 		if (ct >= logoRevealT) revealLogo();
-		const logoFlash = Math.exp(-(((ct - logoRevealT) / LOGO_FLASH_WIDTH) ** 2)) * LOGO_FLASH_BOOST;
-		introBloomStrength = BLOOM_BOOST + (config.bloom - BLOOM_BOOST) * e + logoFlash;
-		wireframeParticleMat.uniforms.u_opacity.value = 1 - e;   // ground particles fade with the fog
+		introBloomStrength = BLOOM_BOOST + (config.bloom - BLOOM_BOOST) * e;
 		// logo particles hold full strength until the glass appears, then
 		// cross-fade out over the remainder of the crossfade instead of a
 		// single-frame zero
@@ -341,11 +456,31 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		const bandFar = FOG_FAR_START + (FOG_FAR_END - FOG_FAR_START) * e;
 		scene.fog.far = bandFar;
 		scene.fog.near = Math.max(0.1, bandFar - FOG_BAND_WIDTH);
+		// scene dots clear with their own front→back wall, lagging the fog: the
+		// fog reveals geometry while the scene is still dim, so dropping a dot
+		// the instant its surface clears reads as "particles suddenly gone" on
+		// the big foreground pillars. This wipe starts a beat later from the
+		// camera plane (once there's brightness to hand off to) and catches the
+		// fog wall exactly at crossfade end, so nothing outlives the intro.
+		// Logo dots keep their own hold-then-fade above — their material's wipe
+		// uniforms stay at the everything-visible default.
+		const de = ct <= DOT_WIPE_DELAY ? 0 : easeInOutCubic((ct - DOT_WIPE_DELAY) / (1 - DOT_WIPE_DELAY));
+		const dotFar = FOG_FAR_END * de;
+		wireframeParticleMat.uniforms.u_wipeFar.value = dotFar;
+		wireframeParticleMat.uniforms.u_wipeNear.value = dotFar - DOT_WIPE_BAND;
+		// starts 1s ahead of the rest of the intro finishing
+		if (!headlineStarted && elapsed >= crossfadeEnd - 1000) {
+			headlineStarted = true;
+			const headline = document.querySelector(".headline");
+			headline.classList.remove("pre-reveal");
+			headline.classList.add("reveal");
+		}
 		if (elapsed >= crossfadeEnd) finishIntroSequence();
 	}
 
 	// --- scroll state -------------------------------------------------
 	let scrollProgress = 0;     // 0..1 raw from scrollbar
+	let heroSkyRotY = 0;        // this frame's hero sky rotation — applyLighting() restores it so the outro's showcase-preview render doesn't leave the hero sky snapped to the showcase orientation
 	let easedProgress = 0;      // smoothed, drives rotation (uncapped — continues past 500vh)
 	let easedScene = 0;         // smoothed 0..1, drives camera dolly only (capped at 500vh)
 	let easedOutro = 0;         // smoothed 0..1 for the extra 20vh outro
@@ -409,6 +544,9 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 
 	// --- live-tunable config (driven by the control panel) ------------
 	const config = {
+		introScale: 1,          // intro duration multiplier (scales hold + crossfade together)
+		introDensity: 1,        // intro particle density multiplier (denser = more dots; applies on next Replay)
+		sceneDetail: 2,         // hero-scene edge emphasis — higher = denser dots along each sharp edge + thinner surface scatter; doesn't touch the logo
 		particleCount: 800,
 		particleSize: 15,       // base point size in px
 		glowSpeed: 0.3,         // flake flutter + glint speed multiplier
@@ -422,8 +560,8 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		logoMetalness: 0,       // metallic amount
 		logoIOR: 1.8,           // index of refraction
 		logoThickness: 0.7,     // optical depth (affects color shift inside glass)
-		logoChroma: 0.07,       // per-material chromatic aberration inside glass
-		logoAnisotropy: 0,      // anisotropic blur on refracted background
+		logoChroma: 0.12,       // per-material chromatic aberration inside glass
+		logoAnisotropy: 0.12,   // anisotropic blur on refracted background
 		logoClearcoat: 1,       // clearcoat layer intensity
 		logoClearcoatRough: 0,  // clearcoat roughness
 		logoEnvIntensity: 1.6,  // environment map reflection intensity
@@ -473,10 +611,6 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		glowSpin: 2.5,          // how fast the sky glow sweeps relative to the column spin
 		skySpeed: 0             // continuous sky drift over time (radians/sec) — the column is lit from the sun so its bright side follows
 	};
-	if (window.__TRIAL__) {
-		config.logoChroma = 0.12;      // #3: more prism dispersion at glass edges
-		config.logoAnisotropy = 0.12;  // #5: a touch of anisotropic highlight streak
-	}
 	let flakeTime = 0;          // accumulated time scaled by glowSpeed
 
 	function readScroll() {
@@ -494,6 +628,14 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		config.cardArc = 0.8;
 		config.cardDepth = -5;
 		config.columnY = 0;
+		// at IOR 1.8, logo slabs seen near edge-on turn into dark screen-locked
+		// smudges (grazing-angle Fresnel reflects the mostly-black sky, and the
+		// refraction smears the dark ceiling). Desktop shows the same thing but
+		// tiny; portrait framing magnifies the logo enough that it reads as a
+		// rendering artifact. 1.4 keeps the glass look without the dark ghosting.
+		config.logoIOR = 1.4;
+		document.getElementById("s-lior").value = 1.4;
+		document.getElementById("v-lior").textContent = "1.40";
 	}
 	const fboScale = isMobile ? 0.5 : 1;
 
@@ -630,6 +772,8 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 			const sunAz = scene.backgroundRotation.y + config.skyGlowX * Math.PI * 2;
 			keyLight.position.set(Math.sin(sunAz) * keyLightDist, keyLightBase.y, Math.cos(sunAz) * keyLightDist);
 		} else {
+			scene.backgroundRotation.y = heroSkyRotY;
+			scene.environmentRotation.y = heroSkyRotY;
 			keyLight.position.copy(keyLightBase);
 		}
 	}
@@ -1673,9 +1817,9 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 			? Math.max(0, 1 - easedShowcase / config.transitionRelease)
 			: easedOutro;
 
-		scene.backgroundRotation.y =
-			config.skyAngle + easedProgress * Math.PI * config.skyTurns + t * config.skyDrift - pointer.x * 0.15;
-		scene.environmentRotation.y = scene.backgroundRotation.y;
+		heroSkyRotY = config.skyAngle + easedProgress * Math.PI * config.skyTurns + t * config.skyDrift - pointer.x * 0.15;
+		scene.backgroundRotation.y = heroSkyRotY;
+		scene.environmentRotation.y = heroSkyRotY;
 
 		particles.points.rotation.y = -easedProgress * Math.PI * 1.5 - t * 0.02;
 		particles.mat.uniforms.u_time.value = flakeTime;
@@ -1708,9 +1852,9 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		// phase switch: dark showcase vs. the original scene
 		const showcaseActive = easedShowcase > 0.001 || showcaseProgress > 0;
 		// don't touch the headline's opacity until its own intro reveal has
-		// started — an inline style here beats the plain (non-animated)
-		// .pre-reveal class rule by CSS specificity and would show it early
-		if (crossfadeStarted) document.querySelector(".headline").style.opacity = showcaseActive ? "0" : "1";
+		// fired (finishIntroSequence) — an inline style here beats the plain
+		// (non-animated) .pre-reveal class rule and would ghost it in early
+		if (introDone) document.querySelector(".headline").style.opacity = showcaseActive ? "0" : "1";
 		showcaseGroup.visible = columnGroup.visible = sectionDust.points.visible = showcaseActive;
 		core.visible = groundPivot.visible = particles.points.visible =
 			haze.visible = mistGroup.visible = !showcaseActive;
@@ -1797,7 +1941,65 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 	}
 
 	// --- events -------------------------------------------------------
-	window.addEventListener("scroll", readScroll, { passive: true });
+	// auto-advance: if the user pauses inside the glitch transition zone, glide
+	// the rest of the way into the showcase so the effect always plays out fully
+	// instead of leaving them stranded mid-transition
+	const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+	const IDLE_MS = 400;   // pause before the auto-glide kicks in
+	let autoScrollRaf = null, autoScrolling = false, scrollIdleTimer = null;
+
+	function cancelAutoScroll() {
+		if (autoScrollRaf !== null) { cancelAnimationFrame(autoScrollRaf); autoScrollRaf = null; }
+		autoScrolling = false;
+	}
+	function autoScrollTo(targetY) {
+		const startY = window.scrollY, dist = targetY - startY;
+		if (Math.abs(dist) < 2) return;
+		const duration = Math.min(3000, Math.max(1200, Math.abs(dist) * 2.8));
+		const startT = performance.now();
+		autoScrolling = true;
+		function step(now) {
+			const p = Math.min(1, (now - startT) / duration);
+			const e = p < 0.5 ? 8 * p * p * p * p : 1 - Math.pow(-2 * p + 2, 4) / 2;   // easeInOutQuart — very gentle start, smooth settle
+			window.scrollTo(0, startY + dist * e);
+			if (p < 1) autoScrollRaf = requestAnimationFrame(step);
+			else { autoScrollRaf = null; autoScrolling = false; }
+		}
+		autoScrollRaf = requestAnimationFrame(step);
+	}
+	function maybeAutoAdvance() {
+		if (autoScrolling) return;
+		const sr = config.outroStart / config.trackHeight;
+		const cr = config.showcaseStart / config.trackHeight;
+		// land PAST the showcase boundary far enough that the glitch/chroma has
+		// fully released — transitionAmt only hits 0 once showcaseProgress clears
+		// transitionRelease; landing exactly on cr parks on the effect's peak
+		const settle = Math.min(1, cr + (config.transitionRelease + 0.06) * (1 - cr));
+		if (scrollProgress >= sr && scrollProgress < settle - 0.005) {
+			const max = document.documentElement.scrollHeight - window.innerHeight;
+			autoScrollTo(settle * max);
+		}
+	}
+	function scheduleIdleCheck() {
+		clearTimeout(scrollIdleTimer);
+		scrollIdleTimer = setTimeout(maybeAutoAdvance, IDLE_MS);
+	}
+
+	window.addEventListener("scroll", () => {
+		readScroll();
+		// programmatic (auto) scrolls fire 'scroll' too — don't let them reschedule
+		if (!autoScrolling && !reducedMotion) scheduleIdleCheck();
+	}, { passive: true });
+
+	if (!reducedMotion) {
+		// real user input cancels an in-flight glide (and defers the next check)
+		const onIntent = () => { cancelAutoScroll(); scheduleIdleCheck(); };
+		window.addEventListener("wheel", onIntent, { passive: true });
+		window.addEventListener("touchstart", onIntent, { passive: true });
+		window.addEventListener("keydown", (e) => {
+			if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " ", "Spacebar"].includes(e.key)) onIntent();
+		});
+	}
 
 	let rafId = null;
 	document.addEventListener("visibilitychange", () => {
@@ -1874,6 +2076,10 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		});
 	}
 
+	const INTRO_BASE_S = (WIREFRAME_HOLD_MS + CROSSFADE_MS) / 1000;
+	bindSlider("s-introdur", "v-introdur", (v) => { config.introScale = v; }, (v) => (INTRO_BASE_S * v).toFixed(1) + "s");
+	bindSlider("s-introdens", "v-introdens", (v) => { config.introDensity = v; }, (v) => v.toFixed(1) + "×");
+	bindSlider("s-scenedet", "v-scenedet", (v) => { config.sceneDetail = v; }, (v) => v.toFixed(1) + "×");
 	bindSlider("s-count", "v-count", (v) => { config.particleCount = Math.round(v); rebuildParticles(); }, (v) => String(Math.round(v)));
 	bindSlider("s-glow", "v-glow", (v) => { config.glowSpeed = v; }, (v) => v.toFixed(2) + "×");
 	bindSlider("s-size", "v-size", (v) => { config.particleSize = v; particles.mat.uniforms.u_size.value = v * renderer.getPixelRatio(); }, (v) => String(Math.round(v)));

@@ -1,4 +1,0 @@
-[     429ms] [ERROR] Failed to load resource: the server responded with a status of 404 (File not found) @ http://localhost:8712/favicon.ico:0
-[16624465ms] TypeError: Cannot read properties of null (reading 'addEventListener')
-    at http://localhost:8712/main.js:1100:40
-    at http://localhost:8712/main.js:1140:3
