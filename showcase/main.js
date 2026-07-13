@@ -561,9 +561,9 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 
 	// --- live-tunable config (driven by the control panel) ------------
 	const config = {
-		introScale: 1,          // intro duration multiplier (scales hold + crossfade together)
+		introScale: 0.8,        // intro duration multiplier (scales hold + crossfade together) — 0.8 × 6.2s base = 5.0s
 		introDensity: 1,        // intro particle density multiplier (denser = more dots; applies on next Replay)
-		sceneDetail: 2,         // hero-scene edge emphasis — higher = denser dots along each sharp edge + thinner surface scatter; doesn't touch the logo
+		sceneDetail: 2.5,       // hero-scene edge emphasis — higher = denser dots along each sharp edge + thinner surface scatter; doesn't touch the logo
 		particleCount: 800,
 		particleSize: 15,       // base point size in px
 		glowSpeed: 0.3,         // flake flutter + glint speed multiplier
