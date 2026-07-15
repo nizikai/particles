@@ -654,6 +654,24 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		settleRate: 1,          // how fast sustained hovering settles from splash toward a murmur (higher = calms sooner)
 		glowGain: 5,            // wave height → dot brightness (higher = ripples read hotter)
 		waveMotion: 3,          // how far dots physically ride the waves (0 = glow only)
+
+		// --- showcase (column section) twins: the card slabs read these instead
+		// of the hero keys above, so the two sections tune independently.
+		// Louder where the card art washes the effect out: glow gain + net size.
+		scNetDensity: 1,        // showcase glass-net dot density (cards resample on change)
+		scNetSize: 14,          // showcase node point size in px
+		scWaveSpeed: 1,         // showcase water propagation speed
+		scWaveLife: 0.96,       // showcase per-step damping
+		scWaveStrength: 0.5,    // showcase stir strength
+		scSplashSize: 3,        // showcase arrival splash amplitude
+		scSettleRate: 1,        // showcase settle rate
+		scGlowGain: 7,          // showcase wave brightness
+		scWaveMotion: 3,        // showcase dot ride distance
+		scHoverFade: 2,         // showcase dwell seconds before stir + spotlight die (0 = never)
+		scHoverIntensity: 1,    // showcase spotlight strength (0 = off)
+		scHoverRadius: 0.35,    // showcase spotlight radius
+		scHoverDotSize: 5,      // showcase spotlight dot size
+
 		rotationTurns: -2,      // turns over a full scroll (negative reverses)
 		groundX: 0,             // ground position offset (x)
 		groundY: 6,             // ground position offset (y)
@@ -1493,7 +1511,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 			mesh.scale.setScalar(config.cardGlassScale);
 			c.mesh.add(mesh);
 			c.glassMat = mat; c.glassMesh = mesh; c.glassFbo = fbo;
-			c.glassNet = makeGlassNet(mesh);
+			c.glassNet = makeGlassNet(mesh, undefined, true);
 			// spotlight dots on the slab's own bounding diagonal (world scale ~1
 			// inside the card group, so the local diag is the right spacing ref).
 			// Unlike the logo's thin bars, the slab is one big flat face — its
@@ -1859,7 +1877,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		return null;
 	}
 
-	function makeGlassNet(mesh, refSize) {
+	function makeGlassNet(mesh, refSize, isCard = false) {
 		mesh.geometry.computeBoundingSphere();
 		const R = mesh.geometry.boundingSphere.radius || 1;
 		refSize = refSize || R * 2;
@@ -1878,7 +1896,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 			area += ab.subVectors(vb, va).cross(ac.subVectors(vc, va)).length() / 2;
 		}
 		const spacing = refSize * NET_DOT_SPACING_FRACTION;
-		const n = Math.max(32, Math.min(NET_DOT_CAP, Math.round(area / (spacing * spacing) * config.netDensity)));
+		const n = Math.max(32, Math.min(NET_DOT_CAP, Math.round(area / (spacing * spacing) * (isCard ? config.scNetDensity : config.netDensity))));
 		const sampler = new MeshSurfaceSampler(mesh).build();
 		const rest = new Float32Array(n * 3);   // home position on the glass
 		const cur  = new Float32Array(n * 3);    // live position — dots ride the wave gradient (draw buffer)
@@ -1959,7 +1977,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 			mesh, nodes, mat, geo, R, refR: refSize / 2, n, rest, cur, brt, cellIdx,
 			hPrev: new Float32Array(gw * gh), hCur: new Float32Array(gw * gh),
 			gw, gh, a0, a1, min0, min1, cellU, cellV,
-			acc: 0, energy: 0, dirty: false, wasLit: false, hoverT: 0
+			acc: 0, energy: 0, dirty: false, wasLit: false, hoverT: 0, isCard
 		};
 		glassNets.push(net);
 		return net;
@@ -1973,7 +1991,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 	function rebuildGlassNets() {   // density changed / model (re)loaded → resample
 		[...glassNets].forEach(disposeGlassNet);
 		glassMeshes.forEach((g) => { g.net = makeGlassNet(g.mesh, coreMaxDim); });
-		cards.forEach((c) => { if (c.glassMesh) c.glassNet = makeGlassNet(c.glassMesh); });
+		cards.forEach((c) => { if (c.glassMesh) c.glassNet = makeGlassNet(c.glassMesh, undefined, true); });
 	}
 	function setNetsVisible(v) {
 		for (const net of glassNets) net.nodes.visible = v;
@@ -2001,6 +2019,10 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		net.energy = energy / (gw * gh);
 		const t2 = net.hCur; net.hCur = net.hPrev; net.hPrev = t2;
 	}
+	// per-section tunables: card nets read the sc* twins, hero nets the originals
+	function netCfg(net, key) {
+		return net.isCard ? config["sc" + key[0].toUpperCase() + key.slice(1)] : config[key];
+	}
 	function updateGlassNets(t, dt) {
 		if (!glassNets.length) return;
 		// one raycast: the world-space epicenter AND which glass mesh was hit —
@@ -2027,10 +2049,10 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 			netSpeedEased += (spd - netSpeedEased) * Math.min(1, dt * (spd > netSpeedEased ? 14 : 5));
 		} else netSpeedEased += (0 - netSpeedEased) * Math.min(1, dt * 5);
 		_netPtrPrev.x = hoverPointer.x; _netPtrPrev.y = hoverPointer.y; _netPtrPrev.has = hoverPointer.active;
-		const size = config.netSize * renderer.getPixelRatio();
-		const stepDt = 1 / (90 * config.waveSpeed);   // sim substep — waveSpeed scales propagation
+		const pr = renderer.getPixelRatio();
 		for (const net of glassNets) {
-			net.mat.uniforms.u_size.value = size;
+			net.mat.uniforms.u_size.value = netCfg(net, "netSize") * pr;
+			const stepDt = 1 / (90 * netCfg(net, "waveSpeed"));   // sim substep — waveSpeed scales propagation
 			const lit = hasHit && net.mesh === hitMesh;
 			// stir the water at the cursor: a hard dip on arrival, then a
 			// continuous speed-scaled stir while moving. The sim does the rest —
@@ -2042,12 +2064,12 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 				const gate = Math.min(1, netSpeedEased * 2);
 				// the stir mellows the longer you stay on the glass: arrival is the
 				// loud splash, sustained hovering settles toward a subtle murmur
-				const mellow = 0.15 + 0.85 * Math.exp(-net.hoverT * config.settleRate);
+				const mellow = 0.15 + 0.85 * Math.exp(-net.hoverT * netCfg(net, "settleRate"));
 				// dwell timeout: after hoverFade seconds on the same slab the stir
 				// stops feeding the sim entirely — the standing waves damp out and
 				// the dots ease home. Leaving the slab resets hoverT (above).
-				const dwell = config.hoverFade > 0 ? Math.max(0, 1 - net.hoverT / config.hoverFade) : 1;
-				const amp = config.waveStrength * (!net.wasLit ? config.splashSize : gate * 1.1 * mellow) * dwell;
+				const dwell = netCfg(net, "hoverFade") > 0 ? Math.max(0, 1 - net.hoverT / netCfg(net, "hoverFade")) : 1;
+				const amp = netCfg(net, "waveStrength") * (!net.wasLit ? netCfg(net, "splashSize") : gate * 1.1 * mellow) * dwell;
 				if (!net.wasLit || gate > 0.05) {
 					// clamp so the whole splash footprint (center + 4 neighbors)
 					// stays INTERIOR: waveStep never touches border cells, so a
@@ -2068,7 +2090,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 			// doesn't spiral); skip entirely once the field has gone still
 			if (lit || net.energy > 1e-5) {
 				net.acc = Math.min(net.acc + dt, stepDt * 4);
-				while (net.acc >= stepDt) { net.acc -= stepDt; waveStep(net, config.waveLife); }
+				while (net.acc >= stepDt) { net.acc -= stepDt; waveStep(net, netCfg(net, "waveLife")); }
 			} else if (net.dirty) {
 				net.brt.fill(0);
 				net.hPrev.fill(0); net.hCur.fill(0);
@@ -2084,11 +2106,11 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 			// shape on screen comes out of the simulation, nothing is stamped
 			const rest = net.rest, cur = net.cur, brt = net.brt, cellIdx = net.cellIdx, h = net.hCur;
 			const gw = net.gw, a0 = net.a0, a1 = net.a1;
-			const mGain = config.waveMotion * net.cellU * 4;
+			const mGain = netCfg(net, "waveMotion") * net.cellU * 4;
 			for (let i = 0; i < net.n; i++) {
 				const ix = i * 3, c = cellIdx[i];
 				const hv = h[c];
-				brt[i] = Math.min(1, (hv > 0 ? hv : -hv) * config.glowGain);
+				brt[i] = Math.min(1, (hv > 0 ? hv : -hv) * netCfg(net, "glowGain"));
 				// slope of the surface at this cell → in-plane drift, downhill
 				const gu = (h[c + 1] - h[c - 1]) * mGain;
 				const gv = (h[c + gw] - h[c - gw]) * mGain;
