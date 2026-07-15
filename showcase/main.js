@@ -96,18 +96,29 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 			// beyond u_wipeFar hold full. Defaults sit behind the camera so the
 			// whole field is visible until the crossfade drives them
 			u_wipeNear: { value: -2 },
-			u_wipeFar: { value: -1 }
+			u_wipeFar: { value: -1 },
+			// cursor spotlight (hover mode) — at u_cursorReveal 0 (the intro's
+			// default) dots ignore the cursor entirely; at 1 they're only visible
+			// within u_cursorRadius of the cursor. Screen-space (NDC) distance.
+			u_cursor: { value: new THREE.Vector2(0, 0) },
+			u_cursorRadius: { value: 0.35 },
+			u_cursorReveal: { value: 0 },
+			u_aspect: { value: 1 }
 		},
 		vertexShader: `
 			uniform float u_size;
 			uniform float u_spawnElapsed;
 			uniform float u_spawnWindow;
 			uniform float u_spawnFadeIn;
+			uniform vec2 u_cursor;
+			uniform float u_cursorRadius;
+			uniform float u_aspect;
 			attribute float aSeed;
 			attribute float aSpawnDelay;
 			varying float vSeed;
 			varying float vSpawn;
 			varying float vDepth;
+			varying float vHover;
 			void main() {
 				vSeed = aSeed;
 				// each particle waits its own random delay (spread across u_spawnWindow),
@@ -118,6 +129,10 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 				vec4 mv = modelViewMatrix * vec4(position, 1.0);
 				vDepth = -mv.z;
 				gl_Position = projectionMatrix * mv;
+				// cursor proximity in aspect-corrected NDC, so the spotlight is a
+				// circle on screen regardless of window shape (soft edge via smoothstep)
+				vec2 away = (gl_Position.xy / max(0.0001, gl_Position.w) - u_cursor) * vec2(u_aspect, 1.0);
+				vHover = 1.0 - smoothstep(0.0, u_cursorRadius, length(away));
 				gl_PointSize = u_size * vSpawn / max(1.0, -mv.z);
 			}
 		`,
@@ -127,9 +142,11 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 			uniform float u_opacity;
 			uniform float u_wipeNear;
 			uniform float u_wipeFar;
+			uniform float u_cursorReveal;
 			varying float vSeed;
 			varying float vSpawn;
 			varying float vDepth;
+			varying float vHover;
 			void main() {
 				if (vSpawn <= 0.0) discard;
 				float wipe = smoothstep(u_wipeNear, u_wipeFar, vDepth);
@@ -141,7 +158,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 				if (soft < 0.02 && core < 0.02) discard;
 				vec3 col = mix(u_colorA, u_colorB, vSeed);
 				float a = soft * 0.7 + core * 1.4;
-				gl_FragColor = vec4(col, a * vSpawn * u_opacity * wipe);
+				gl_FragColor = vec4(col, a * vSpawn * u_opacity * wipe * mix(1.0, vHover, u_cursorReveal));
 			}
 		`
 	});
@@ -151,6 +168,43 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 	// clone of the shared material rather than the same instance
 	const logoParticleMat = wireframeParticleMat.clone();
 	const wireframePairs = [];   // { mesh, points, isGlass } — real meshes hidden + their particle stand-in
+
+	// --- hover spotlight: preloader-style dots over every glass surface (the
+	// hero logo + the showcase cards' slabs), visible only near the cursor,
+	// while the real glass stays fully rendered underneath. Own material clone
+	// so the intro's uniforms (spawn/opacity/wipe) never touch it.
+	const hoverDotMat = wireframeParticleMat.clone();
+	hoverDotMat.uniforms.u_spawnElapsed.value = 1e4;   // long past every spawn delay — dots are always fully "spawned"
+	hoverDotMat.uniforms.u_cursorReveal.value = 1;     // visible only inside the cursor spotlight
+	const hoverLogoPoints = [];
+	function makeHoverDots(mesh, refDiag, surfSpacing, edgeDensity = 1) {
+		hoverDotMat.uniforms.u_size.value = config.hoverDotSize * renderer.getPixelRatio();
+		const points = makeWireframePoints(mesh, refDiag, hoverDotMat, surfSpacing, 20, edgeDensity);
+		// child of the glass, not the sibling makeWireframePoints sets up: the
+		// dots then inherit its transform AND visibility, so they vanish with it
+		// (intro hides the logo, cards fade in/out) with no per-frame syncing
+		mesh.add(points);
+		points.position.set(0, 0, 0);
+		points.quaternion.identity();
+		points.scale.setScalar(1);
+		// the card slab sits BEHIND its opaque card front, so the transparent
+		// sort draws the front after the dots and covers them — force the dots
+		// last (above the title text's renderOrder 1; depthTest is already off)
+		points.renderOrder = 2;
+		mesh.visible = true;   // makeWireframePoints hides the mesh (intro behavior) — here the glass stays
+		return points;
+	}
+	function buildHoverLogoDots() {
+		teardownHoverLogoDots();
+		for (const g of glassMeshes) hoverLogoPoints.push(makeHoverDots(g.mesh, coreMaxDim));
+	}
+	function teardownHoverLogoDots() {
+		for (const p of hoverLogoPoints) {
+			p.parent?.remove(p);
+			p.geometry.dispose();
+		}
+		hoverLogoPoints.length = 0;
+	}
 	function hidePreloader() {
 		if (preloaderHidden) return;
 		preloaderHidden = true;
@@ -505,6 +559,10 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 	let easedSpin = 0;          // smoothed 0..1 carousel rotation, starts ramping at the outro so it's already turning during the transition wipe instead of sitting frozen until easedShowcase kicks in
 	// SCENE_RATIO is computed dynamically from config.outroStart in the tick loop
 	const pointer = { x: 0, y: 0, tx: 0, ty: 0 };
+	// hover mode's own smoothed cursor — chases pointer.tx/ty faster than the
+	// parallax pointer (0.05) so the particle reaction feels attached to the
+	// mouse instead of dragged behind it
+	const hoverCursor = { x: 0, y: 0 };
 
 	// --- gyroscope (mobile/tablet) — overrides pointer when available ----
 	const GYRO_TILT_RANGE = 22;   // degrees of physical tilt = full -1..1 range
@@ -564,6 +622,9 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		introScale: 0.8,        // intro duration multiplier (scales hold + crossfade together) — 0.8 × 6.2s base = 5.0s
 		introDensity: 1,        // intro particle density multiplier (denser = more dots; applies on next Replay)
 		sceneDetail: 2.5,       // hero-scene edge emphasis — higher = denser dots along each sharp edge + thinner surface scatter; doesn't touch the logo
+		hoverIntensity: 1,      // strength of the cursor spotlight of preloader dots over the glass logo (0 = off)
+		hoverRadius: 0.35,      // spotlight radius in screen units (1 = half the screen height)
+		hoverDotSize: 3,        // spotlight dot size (same scale as the intro's logo stand-in)
 		particleCount: 800,
 		particleSize: 15,       // base point size in px
 		glowSpeed: 0.3,         // flake flutter + glint speed multiplier
@@ -573,16 +634,26 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		modelZ: 0,              // glass logo position offset (z)
 		depthScale: 1,          // Z-depth multiplier: 1.0 = true scene.glb depth, <1 = slimmer slabs (art override)
 		logoTransmission: 1,    // 1 = pure glass, 0 = fully opaque solid
-		logoRoughness: 0.05,    // surface roughness (0 = mirror, 1 = matte)
+		logoRoughness: 0.1,     // surface roughness (0 = mirror, 1 = matte)
 		logoMetalness: 0,       // metallic amount
-		logoIOR: 1.8,           // index of refraction
+		logoIOR: 2,             // index of refraction
 		logoThickness: 0.7,     // optical depth (affects color shift inside glass)
-		logoChroma: 0.12,       // per-material chromatic aberration inside glass
-		logoAnisotropy: 0.12,   // anisotropic blur on refracted background
+		logoChroma: 0.15,       // per-material chromatic aberration inside glass
+		logoAnisotropy: 0.5,    // anisotropic blur on refracted background
 		logoClearcoat: 1,       // clearcoat layer intensity
 		logoClearcoatRough: 0,  // clearcoat roughness
 		logoEnvIntensity: 1.6,  // environment map reflection intensity
 		logoAttenuationDist: 10,// distance over which attenuationColor tints the glass
+		netDensity: 1,          // glass-net dot density multiplier (1 = preloader-like pitch); change resamples
+		netSize: 10,            // node point size in px
+		waveSpeed: 1,           // water-sim propagation speed multiplier
+		waveLife: 0.96,         // per-step damping: higher = ripples live longer (lively), lower = viscous calm
+		waveStrength: 0.5,      // how hard the cursor stirs the water
+		hoverFade: 2,           // seconds hovering the same glass before the stir AND the hover-mode dots die out (0 = never); leaving resets it
+		splashSize: 3,          // amplitude of the arrival splash when the cursor first lands on a glass
+		settleRate: 1,          // how fast sustained hovering settles from splash toward a murmur (higher = calms sooner)
+		glowGain: 5,            // wave height → dot brightness (higher = ripples read hotter)
+		waveMotion: 3,          // how far dots physically ride the waves (0 = glow only)
 		rotationTurns: -2,      // turns over a full scroll (negative reverses)
 		groundX: 0,             // ground position offset (x)
 		groundY: 6,             // ground position offset (y)
@@ -624,6 +695,12 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		cardDepth: -4,          // push the whole card ring toward (+) / away from (-) the camera
 		cardScale: 1.25,        // overall card size multiplier
 		cardArc: 0.85,          // angular spread between cards (1 = even, >1 = more separated, <1 = bunched)
+		cardStart: 1.85,        // how far off-center the first card starts after the transition (0 = already centered, higher = enters from further down the entry lane)
+		cardThickness: 0,        // card edge depth — kept 0: the card is a flat plane, the glass is the separate slab behind it
+		cardGlassBack: true,    // render each card's back as refracting glass (hero-style) instead of a flat gradient — desktop only (disabled on mobile in the isMobile block below)
+		cardGlassGap: 0.2,      // z distance between the flat card front and the floating glass slab behind it
+		cardGlassScale: 1.05,   // glass slab size multiplier relative to the card (1 = same footprint)
+		cardGlassThickness: 0.1,// geometric depth of the glass slab (real extruded volume, not just optical thickness)
 		skyGlowX: 0.5,          // aligns the column's key light to the sun in the sky
 		glowSpin: 2.5,          // how fast the sky glow sweeps relative to the column spin
 		skySpeed: 0             // continuous sky drift over time (radians/sec) — the column is lit from the sun so its bright side follows
@@ -653,8 +730,15 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		config.logoIOR = 1.4;
 		document.getElementById("s-lior").value = 1.4;
 		document.getElementById("v-lior").textContent = "1.40";
+		// glass-back refraction on 5 cards is too many full-screen FBO passes
+		// for a mobile GPU; keep the cheap gradient back there
+		config.cardGlassBack = false;
 	}
 	const fboScale = isMobile ? 0.5 : 1;
+	// card glass FBOs run at a lower resolution than the hero's — cards are
+	// small on screen, the refraction already carries anisotropic blur, and
+	// there are 5 of them per frame
+	const cardFboScale = isMobile ? 0.5 : 0.6;
 
 	function getLvh() {
 		const el = document.createElement("div");
@@ -977,8 +1061,43 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		return m;
 	}
 
+	// glass material for a showcase card's back face — same MeshTransmissionMaterial
+	// refraction as the hero logo, but with fewer samples (cards are small + there
+	// are 5 of them) and its own per-card FBO. DoubleSide so the glass reads from
+	// both sides as the card spirals around the ring.
+	function makeCardGlass() {
+		const m = new MeshTransmissionMaterial(isMobile ? 2 : 4, false);
+		m.transmission = config.logoTransmission; m._transmission = config.logoTransmission;
+		m.roughness = config.logoRoughness;
+		m.metalness = config.logoMetalness;
+		m.ior = config.logoIOR;
+		m.thickness = config.logoThickness;
+		m.chromaticAberration = config.logoChroma;
+		m.anisotropicBlur = config.logoAnisotropy;
+		m.clearcoat = config.logoClearcoat;
+		m.clearcoatRoughness = config.logoClearcoatRough;
+		m.envMapIntensity = config.logoEnvIntensity;
+		m.attenuationColor = new THREE.Color(0xffd9a8);
+		m.attenuationDistance = config.logoAttenuationDist;
+		m.color = new THREE.Color(0xffffff);
+		m.side = THREE.DoubleSide;
+		m.fog = false;
+		return m;
+	}
+
 	const glassMeshes = [];
 	const discard = new DiscardMaterial();
+
+	// glass-net shared state — declared here (not next to makeGlassNet below)
+	// because addSlab/createCardBack call makeGlassNet as models load, which can
+	// fire synchronously on a loader error, before a later declaration would run.
+	const glassNets = [];   // one per glass mesh — dots + its water-sim grid (see makeGlassNet)
+	const NET_COLOR_A = 0xffb347, NET_COLOR_B = 0xfff2d9;   // same amber pair as the preloader dots
+	// dot pitch as a fraction of refSize — the whole logo's max dim for hero slabs
+	// (uniform pitch across big and small slabs, like the preloader's trace), a
+	// card slab's own diameter otherwise
+	const NET_DOT_SPACING_FRACTION = 0.02;
+	const NET_DOT_CAP = 4000;   // per-mesh safety cap
 
 	function addSlab(geo) {
 		const mat = makeGlass();
@@ -986,11 +1105,15 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		const fbo = new THREE.WebGLRenderTarget(Math.round(window.innerWidth * fboScale), Math.round(initH * fboScale), { type: THREE.HalfFloatType });
 		mat.buffer = fbo.texture;
 		core.add(mesh);
-		glassMeshes.push({ mesh, mat, fbo });
+		// net built later (rebuildGlassNets after frameCore) — its dot pitch needs
+		// coreMaxDim, the whole logo's size, which frameCore computes once all
+		// slabs are in
+		glassMeshes.push({ mesh, mat, fbo, net: null });
 	}
 
 	function clearSlabs() {
 		for (const g of glassMeshes) {
+			if (g.net) disposeGlassNet(g.net);
 			core.remove(g.mesh);
 			g.mesh.geometry.dispose();
 			g.mat.dispose();
@@ -1014,6 +1137,8 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		if (!geos.length) { addFallback(); return; }
 		geos.forEach(addSlab);
 		frameCore();
+		rebuildGlassNets();
+		buildHoverLogoDots();
 		modelReady = true;
 		markLoaded("logo");
 	}
@@ -1022,6 +1147,8 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		clearSlabs();
 		addSlab(new THREE.TorusKnotGeometry(1, 0.34, 180, 32));
 		frameCore();
+		rebuildGlassNets();
+		buildHoverLogoDots();
 		modelReady = true;
 		markLoaded("logo");
 	}
@@ -1183,7 +1310,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		{ title: "VOID\nGARDEN",          hueA: 12, hueB: 40 }
 	];
 
-	function roundedRectGeo(w, h, r) {
+	function makeCardShape(w, h, r) {
 		const s = new THREE.Shape();
 		const x = -w / 2, y = -h / 2;
 		s.moveTo(x + r, y);
@@ -1191,10 +1318,49 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		s.lineTo(x + w, y + h - r);       s.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
 		s.lineTo(x + r, y + h);           s.quadraticCurveTo(x, y + h, x, y + h - r);
 		s.lineTo(x, y + r);               s.quadraticCurveTo(x, y, x + r, y);
-		const g = new THREE.ShapeGeometry(s, 12);
+		return s;
+	}
+
+	function roundedRectGeo(shape, w, h) {
+		const g = new THREE.ShapeGeometry(shape, 12);
 		// remap UVs from shape space to 0..1 so the canvas texture fills the card
 		const uv = g.attributes.uv;
+		const x = -w / 2, y = -h / 2;
 		for (let i = 0; i < uv.count; i++) uv.setXY(i, (uv.getX(i) - x) / w, (uv.getY(i) - y) / h);
+		return g;
+	}
+
+	// thin ribbon tracing the card's rounded silhouette from z=0 (front) to
+	// z=-thickness (back) — the only geometry that reads as "edge" when a
+	// card is seen near side-on, everything else stays a flat unlit plane
+	function makeRimGeo(shape, thickness) {
+		const pts = shape.getPoints(12);
+		if (pts.length > 1 && pts[0].distanceTo(pts[pts.length - 1]) < 1e-6) pts.pop();
+		const n = pts.length;
+		const positions = new Float32Array(n * 2 * 3);
+		for (let i = 0; i < n; i++) {
+			positions[i * 3] = pts[i].x; positions[i * 3 + 1] = pts[i].y; positions[i * 3 + 2] = 0;
+			positions[(n + i) * 3] = pts[i].x; positions[(n + i) * 3 + 1] = pts[i].y; positions[(n + i) * 3 + 2] = -thickness;
+		}
+		const indices = [];
+		for (let i = 0; i < n; i++) {
+			const a = i, b = (i + 1) % n, c = n + i, d = n + ((i + 1) % n);
+			indices.push(a, b, d,  a, d, c);
+		}
+		const geo = new THREE.BufferGeometry();
+		geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+		geo.setIndex(indices);
+		return geo;
+	}
+
+	// real 3D slab for the glass back: the rounded-rect shape extruded along
+	// z, then recentered so its volume straddles z=0 (front face at +depth/2,
+	// back face at -depth/2). This gives the transmission material actual
+	// geometry to refract through — reads as a solid glass block, not a plane.
+	function makeGlassSlabGeo(shape, depth) {
+		const g = new THREE.ExtrudeGeometry(shape, { depth: Math.max(0.001, depth), bevelEnabled: false, curveSegments: 12 });
+		g.translate(0, 0, -depth / 2);
+		g.computeVertexNormals();
 		return g;
 	}
 
@@ -1253,8 +1419,12 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 	showcaseGroup.visible = false;
 	scene.add(showcaseGroup);
 	const cards = [];
-	const cardGeo = roundedRectGeo(3.4, 2.1, 0.18);
-	const textGeo = new THREE.PlaneGeometry(3.4, 2.1);   // title layer, floats in front of the card
+	const CARD_W = 3.4, CARD_H = 2.1;
+	const cardShape = makeCardShape(CARD_W, CARD_H, 0.18);
+	const cardGeo = roundedRectGeo(cardShape, CARD_W, CARD_H);
+	const textGeo = new THREE.PlaneGeometry(CARD_W, CARD_H);   // title layer, floats in front of the card
+	// the glass slab geometry is rebuilt per-card on demand (makeGlassSlabGeo)
+	// since cardGlassThickness is live-tunable; cardGeo stays flat for the front
 
 	function layoutCards() {
 		const R = config.showcaseRadius;
@@ -1267,10 +1437,100 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		});
 	}
 
+	// cheap back face: no texture, just the card's own hueA/hueB baked into
+	// per-vertex color (a plain lerp across UV.x) — avoids paying for a second
+	// texture sample per card once the front is real video content
+	function makeBackGeo(p) {
+		const geo = cardGeo.clone();
+		const colorA = new THREE.Color().setHSL(p.hueA / 360, 0.55, 0.16, THREE.SRGBColorSpace);
+		const colorB = new THREE.Color().setHSL(p.hueB / 360, 0.55, 0.16, THREE.SRGBColorSpace);
+		const uv = geo.attributes.uv;
+		const colors = new Float32Array(uv.count * 3);
+		const c = new THREE.Color();
+		for (let i = 0; i < uv.count; i++) {
+			c.copy(colorA).lerp(colorB, uv.getX(i));
+			colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;
+		}
+		geo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+		return geo;
+	}
+
+	// build (or swap) one card's back face: either a refracting glass slab that
+	// samples a per-card FBO (cardGlassBack on) or the cheap baked gradient back.
+	// Called from buildShowcase and again whenever the glass-back checkbox flips.
+	function disposeCardBack(c) {
+		if (c.glassMat) {
+			if (c.glassNet) { disposeGlassNet(c.glassNet); c.glassNet = null; }
+			if (c.hoverDots) { c.hoverDots.geometry.dispose(); c.hoverDots = null; }   // leaves the tree with its parent glassMesh below
+			c.mesh.remove(c.glassMesh);
+			c.glassMesh.geometry.dispose();   // slab owns its own geometry (rebuilt on thickness change)
+			c.glassMat.dispose();
+			c.glassFbo.dispose();
+			c.glassMat = null; c.glassMesh = null; c.glassFbo = null;
+		} else if (c.backMat) {
+			c.mesh.remove(c.backMesh);
+			c.backMesh.geometry.dispose();
+			c.backMat.dispose();
+			c.backMat = null; c.backMesh = null;
+		}
+	}
+
+	function createCardBack(c, p) {
+		disposeCardBack(c);
+		if (config.cardGlassBack) {
+			const mat = makeCardGlass();
+			const fbo = new THREE.WebGLRenderTarget(
+				Math.round(window.innerWidth * cardFboScale),
+				Math.round(initH * cardFboScale),
+				{ type: THREE.HalfFloatType }
+			);
+			mat.buffer = fbo.texture;
+			// real extruded slab with its own geometric depth — a separate
+			// glass volume floating behind the flat card, not a coplanar plane
+			const slabGeo = makeGlassSlabGeo(cardShape, config.cardGlassThickness);
+			const mesh = new THREE.Mesh(slabGeo, mat);
+			mesh.position.z = -config.cardGlassGap;   // floats independently behind the card
+			mesh.scale.setScalar(config.cardGlassScale);
+			c.mesh.add(mesh);
+			c.glassMat = mat; c.glassMesh = mesh; c.glassFbo = fbo;
+			c.glassNet = makeGlassNet(mesh);
+			// spotlight dots on the slab's own bounding diagonal (world scale ~1
+			// inside the card group, so the local diag is the right spacing ref).
+			// Unlike the logo's thin bars, the slab is one big flat face — its
+			// edge trace is just the outline, so a cursor over the middle would
+			// light nothing. The surface-fill pass covers the face itself.
+			slabGeo.computeBoundingSphere();
+			const slabDiag = slabGeo.boundingSphere.radius * 2 * config.cardGlassScale;
+			// 8× edge density: dots pack tight enough along the slab outline to
+			// overlap on screen, so the edges read as a glowing line under the
+			// spotlight like the logo (whose thin bars stack edges naturally)
+			c.hoverDots = makeHoverDots(mesh, slabDiag, slabDiag * 0.03, 8);
+			mesh.visible = false;   // updateShowcase drives visibility from the card's fade (after makeHoverDots, which re-shows the mesh)
+		} else {
+			const backMat = new THREE.MeshBasicMaterial({
+				vertexColors: true,
+				side: THREE.BackSide,
+				transparent: true,
+				opacity: 0
+			});
+			const backMesh = new THREE.Mesh(makeBackGeo(p), backMat);
+			backMesh.position.z = -config.cardThickness;
+			c.mesh.add(backMesh);
+			c.backMat = backMat; c.backMesh = backMesh;
+		}
+	}
+
+	function rebuildCardBacks() {
+		cards.forEach((c, i) => createCardBack(c, projects[i]));
+	}
+
 	function buildShowcase() {
 		projects.forEach((p, i) => {
 			// FrontSide: cards on the far side of the ring face away and cull out,
-			// so you never see mirrored title text through their backs
+			// so you never see mirrored title text through their backs. The card
+			// itself is a clean flat plane — no rim, no edge, no thickness. The
+			// separate glass slab (added below via createCardBack) is what carries
+			// the 3D depth behind it.
 			const mat = new THREE.MeshBasicMaterial({
 				map: makeCardTexture(p),
 				transparent: true,
@@ -1289,10 +1549,39 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 			textMesh.position.z = config.textDepth;
 			textMesh.renderOrder = 1;
 			mesh.add(textMesh);
-			cards.push({ mesh, mat, textMat, textMesh, helixY: 0, focusT: 0, baseAngle: 0 });
+			// glass slab added via createCardBack (or the cheap gradient back when
+			// cardGlassBack is off). Back refs start null so createCardBack can
+			// populate either branch cleanly.
+			const c = {
+				mesh, mat, textMat, textMesh,
+				helixY: 0, focusT: 0, baseAngle: 0,
+				backMesh: null, backMat: null,
+				glassMesh: null, glassMat: null, glassFbo: null, glassNet: null, hoverDots: null
+			};
+			cards.push(c);
+			createCardBack(c, p);
 			showcaseGroup.add(mesh);
 		});
 		layoutCards();
+	}
+
+	// re-run when the thickness slider moves: reposition each card's back
+	// face and swap in a rim geometry sized to the new depth
+	// the card front is flat now (no rim), so this only repositions the cheap
+	// gradient back when glass is off — the glass slab's depth lives in its
+	// own geometry (see applyGlassSlab)
+	function applyCardThickness() {
+		cards.forEach((c) => {
+			if (!c.glassMat) c.backMesh.position.z = -config.cardThickness;
+		});
+	}
+	// rebuild each glass slab's extruded geometry when cardGlassThickness changes
+	function applyGlassSlab() {
+		cards.forEach((c) => {
+			if (!c.glassMat) return;
+			c.glassMesh.geometry.dispose();
+			c.glassMesh.geometry = makeGlassSlabGeo(cardShape, config.cardGlassThickness);
+		});
 	}
 	// redraw titles once the webfont is in (textures are cheap to rebuild)
 	document.fonts.ready.then(() => {
@@ -1551,6 +1840,266 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		focusedCard = (card && card !== focusedCard) ? card : null;
 	});
 
+	// --- glass hover particles ---------------------------------------
+	// amber particle dots densely sampled onto each glass surface (hero logo slabs
+	// + showcase card glass) at the preloader's dot pitch, parented to the glass so
+	// they rotate/move with it. Behind them runs a real 2D water simulation (a
+	// wave-equation grid over each slab's face): the cursor stirs the water where
+	// it touches, and the waves radiate, interfere, and reflect off the slab
+	// edges entirely on their own — nothing is a stamped preset shape. Dots ride
+	// the water: they glow at the wave crests/troughs and drift along the
+	// surface's slope, easing home as the water stills. Invisible at rest, per
+	// hovered mesh only; the sim sleeps once its field goes quiet.
+	const hoverPointer = { x: 0, y: 0, active: false };
+	const _hoverNDC = new THREE.Vector2();
+	function hoverTargets() {
+		if (core.visible) return glassMeshes.map((g) => g.mesh);
+		if (showcaseGroup.visible && config.cardGlassBack)
+			return cards.filter((c) => c.glassMesh && c.glassMesh.visible).map((c) => c.glassMesh);
+		return null;
+	}
+
+	function makeGlassNet(mesh, refSize) {
+		mesh.geometry.computeBoundingSphere();
+		const R = mesh.geometry.boundingSphere.radius || 1;
+		refSize = refSize || R * 2;
+		// surface area in the mesh's LOCAL space — the nodes are parented to the
+		// mesh, so spacing/refSize live in the same local units
+		const pos = mesh.geometry.attributes.position;
+		const idx = mesh.geometry.index;
+		const va = new THREE.Vector3(), vb = new THREE.Vector3(), vc = new THREE.Vector3();
+		const ab = new THREE.Vector3(), ac = new THREE.Vector3();
+		let area = 0;
+		const triCount = (idx ? idx.count : pos.count) / 3;
+		for (let t = 0; t < triCount; t++) {
+			va.fromBufferAttribute(pos, idx ? idx.getX(t * 3) : t * 3);
+			vb.fromBufferAttribute(pos, idx ? idx.getX(t * 3 + 1) : t * 3 + 1);
+			vc.fromBufferAttribute(pos, idx ? idx.getX(t * 3 + 2) : t * 3 + 2);
+			area += ab.subVectors(vb, va).cross(ac.subVectors(vc, va)).length() / 2;
+		}
+		const spacing = refSize * NET_DOT_SPACING_FRACTION;
+		const n = Math.max(32, Math.min(NET_DOT_CAP, Math.round(area / (spacing * spacing) * config.netDensity)));
+		const sampler = new MeshSurfaceSampler(mesh).build();
+		const rest = new Float32Array(n * 3);   // home position on the glass
+		const cur  = new Float32Array(n * 3);    // live position — dots ride the wave gradient (draw buffer)
+		const nrm  = new Float32Array(n * 3);    // surface normal — facing fade
+		const seed = new Float32Array(n);
+		const brt  = new Float32Array(n);        // drawn brightness — the wave crests
+		// water grid: a 2D wave field spanning the mesh's two largest local
+		// extents (the slab's face). Cell aspect kept ~square so waves stay round.
+		mesh.geometry.computeBoundingBox();
+		const bb = mesh.geometry.boundingBox;
+		const dims = [bb.max.x - bb.min.x, bb.max.y - bb.min.y, bb.max.z - bb.min.z];
+		let a0 = 0; for (let k = 1; k < 3; k++) if (dims[k] > dims[a0]) a0 = k;
+		let a1 = a0 === 0 ? 1 : 0; for (let k = 0; k < 3; k++) if (k !== a0 && dims[k] > dims[a1]) a1 = k;
+		const gw = 64;
+		const gh = Math.max(8, Math.min(64, Math.round(gw * dims[a1] / (dims[a0] || 1))));
+		const min0 = bb.min.getComponent(a0), min1 = bb.min.getComponent(a1);
+		const cellU = dims[a0] / (gw - 1) || 1, cellV = dims[a1] / (gh - 1) || 1;
+		const cellIdx = new Int32Array(n);       // each dot's wave-grid cell (interior-clamped)
+		const p = new THREE.Vector3(), nn = new THREE.Vector3();
+		for (let i = 0; i < n; i++) {
+			sampler.sample(p, nn);
+			rest[i * 3] = cur[i * 3] = p.x; rest[i * 3 + 1] = cur[i * 3 + 1] = p.y; rest[i * 3 + 2] = cur[i * 3 + 2] = p.z;
+			nrm[i * 3] = nn.x; nrm[i * 3 + 1] = nn.y; nrm[i * 3 + 2] = nn.z;
+			seed[i] = Math.random();
+			const iu = Math.min(gw - 2, Math.max(1, Math.round((p.getComponent(a0) - min0) / cellU)));
+			const iv = Math.min(gh - 2, Math.max(1, Math.round((p.getComponent(a1) - min1) / cellV)));
+			cellIdx[i] = iv * gw + iu;
+		}
+		const geo = new THREE.BufferGeometry();
+		geo.setAttribute("position", new THREE.BufferAttribute(cur, 3));    // dynamic — wave motion
+		geo.setAttribute("aNormal", new THREE.BufferAttribute(nrm, 3));
+		geo.setAttribute("aSeed", new THREE.BufferAttribute(seed, 1));
+		geo.setAttribute("aBright", new THREE.BufferAttribute(brt, 1));     // dynamic — the glow
+		const mat = new THREE.ShaderMaterial({
+			transparent: true, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending,
+			uniforms: {
+				u_size:   { value: config.netSize },
+				u_colorA: { value: new THREE.Color(NET_COLOR_A) },
+				u_colorB: { value: new THREE.Color(NET_COLOR_B) }
+			},
+			vertexShader: `
+				uniform float u_size;
+				attribute vec3 aNormal; attribute float aSeed; attribute float aBright;
+				varying float vBright; varying float vSeed;
+				void main() {
+					vec4 mv = modelViewMatrix * vec4(position, 1.0);
+					// hide the back side so the net reads as sitting on the visible face
+					float facing = smoothstep(-0.1, 0.4, dot(normalize(normalMatrix * aNormal), normalize(-mv.xyz)));
+					vBright = aBright * facing;
+					vSeed = aSeed;
+					gl_Position = projectionMatrix * mv;
+					gl_PointSize = u_size * facing * (0.5 + aBright) / max(1.0, -mv.z);
+				}
+			`,
+			fragmentShader: `
+				uniform vec3 u_colorA; uniform vec3 u_colorB;
+				varying float vBright; varying float vSeed;
+				void main() {
+					if (vBright <= 0.001) discard;
+					vec2 uv = gl_PointCoord - 0.5;
+					float d = dot(uv, uv);
+					float soft = exp(-d * 8.0);
+					float core = exp(-d * 40.0);
+					if (soft < 0.02 && core < 0.02) discard;
+					gl_FragColor = vec4(mix(u_colorA, u_colorB, vSeed), (soft * 0.7 + core * 1.4) * vBright);
+				}
+			`
+		});
+		const nodes = new THREE.Points(geo, mat);
+		nodes.frustumCulled = false;
+
+		mesh.add(nodes);
+		// refR: glow radius reference — half the whole logo's max dim for hero
+		// slabs (so the glow spans slab boundaries at one consistent size), the
+		// mesh's own radius for cards. center: local bounding-sphere center for
+		// the cheap "epicenter can't reach this mesh" reject.
+		const net = {
+			mesh, nodes, mat, geo, R, refR: refSize / 2, n, rest, cur, brt, cellIdx,
+			hPrev: new Float32Array(gw * gh), hCur: new Float32Array(gw * gh),
+			gw, gh, a0, a1, min0, min1, cellU, cellV,
+			acc: 0, energy: 0, dirty: false, wasLit: false, hoverT: 0
+		};
+		glassNets.push(net);
+		return net;
+	}
+	function disposeGlassNet(net) {
+		const i = glassNets.indexOf(net);
+		if (i >= 0) glassNets.splice(i, 1);
+		net.mesh.remove(net.nodes);
+		net.geo.dispose(); net.mat.dispose();
+	}
+	function rebuildGlassNets() {   // density changed / model (re)loaded → resample
+		[...glassNets].forEach(disposeGlassNet);
+		glassMeshes.forEach((g) => { g.net = makeGlassNet(g.mesh, coreMaxDim); });
+		cards.forEach((c) => { if (c.glassMesh) c.glassNet = makeGlassNet(c.glassMesh); });
+	}
+	function setNetsVisible(v) {
+		for (const net of glassNets) net.nodes.visible = v;
+	}
+	const _netWorld = new THREE.Vector3(), _netLocal = new THREE.Vector3();
+	const _netPtrPrev = { x: 0, y: 0, has: false };
+	let netSpeedEased = 0;        // eased cursor speed, 0..1 — scales how hard the cursor stirs
+	let glassDwellT = 0;          // seconds the cursor has sat on any glass — the hover-mode spotlight fades on the same hoverFade clock as the stir
+
+	// one step of the classic two-buffer water sim (Hugo Elias): each cell moves
+	// toward the average of its neighbours, overshooting past it (that's the
+	// wave), then damps. Writes "next" into hPrev and swaps — hCur is always the
+	// latest field. Borders stay 0 = walls, so waves reflect off the slab edges.
+	function waveStep(net, damp) {
+		const { hPrev, hCur, gw, gh } = net;
+		let energy = 0;
+		for (let y = 1; y < gh - 1; y++) {
+			let o = y * gw + 1;
+			for (let x = 1; x < gw - 1; x++, o++) {
+				const v = ((hCur[o - 1] + hCur[o + 1] + hCur[o - gw] + hCur[o + gw]) * 0.5 - hPrev[o]) * damp;
+				hPrev[o] = v;
+				energy += v > 0 ? v : -v;
+			}
+		}
+		net.energy = energy / (gw * gh);
+		const t2 = net.hCur; net.hCur = net.hPrev; net.hPrev = t2;
+	}
+	function updateGlassNets(t, dt) {
+		if (!glassNets.length) return;
+		// one raycast: the world-space epicenter AND which glass mesh was hit —
+		// the effect stays on the hovered mesh only, neighbours are untouched
+		let hasHit = false, hitMesh = null;
+		if (hoverPointer.active) {
+			const targets = hoverTargets();
+			if (targets && targets.length) {
+				_hoverNDC.set(
+					(hoverPointer.x / window.innerWidth) * 2 - 1,
+					-(hoverPointer.y / window.innerHeight) * 2 + 1
+				);
+				raycaster.setFromCamera(_hoverNDC, camera);
+				const hit = raycaster.intersectObjects(targets, false)[0];
+				if (hit) { _netWorld.copy(hit.point); hitMesh = hit.object; hasHit = true; }
+			}
+		}
+		glassDwellT = hasHit ? glassDwellT + dt : 0;
+		// movement-reactive: the glow follows cursor speed (screen-space, in
+		// viewport-heights/sec, eased), so a parked cursor fades to invisible
+		if (hoverPointer.active && _netPtrPrev.has && dt > 0) {
+			const spd = Math.min(1, Math.hypot(hoverPointer.x - _netPtrPrev.x, hoverPointer.y - _netPtrPrev.y) / window.innerHeight / dt * 2.5);
+			// quick to respond to a stroke, slower to let go when the cursor stops
+			netSpeedEased += (spd - netSpeedEased) * Math.min(1, dt * (spd > netSpeedEased ? 14 : 5));
+		} else netSpeedEased += (0 - netSpeedEased) * Math.min(1, dt * 5);
+		_netPtrPrev.x = hoverPointer.x; _netPtrPrev.y = hoverPointer.y; _netPtrPrev.has = hoverPointer.active;
+		const size = config.netSize * renderer.getPixelRatio();
+		const stepDt = 1 / (90 * config.waveSpeed);   // sim substep — waveSpeed scales propagation
+		for (const net of glassNets) {
+			net.mat.uniforms.u_size.value = size;
+			const lit = hasHit && net.mesh === hitMesh;
+			// stir the water at the cursor: a hard dip on arrival, then a
+			// continuous speed-scaled stir while moving. The sim does the rest —
+			// waves radiate, interfere, and reflect off the slab edges on their own.
+			if (lit) {
+				_netLocal.copy(_netWorld);
+				net.mesh.worldToLocal(_netLocal);
+				net.hoverT = net.wasLit ? net.hoverT + dt : 0;
+				const gate = Math.min(1, netSpeedEased * 2);
+				// the stir mellows the longer you stay on the glass: arrival is the
+				// loud splash, sustained hovering settles toward a subtle murmur
+				const mellow = 0.15 + 0.85 * Math.exp(-net.hoverT * config.settleRate);
+				// dwell timeout: after hoverFade seconds on the same slab the stir
+				// stops feeding the sim entirely — the standing waves damp out and
+				// the dots ease home. Leaving the slab resets hoverT (above).
+				const dwell = config.hoverFade > 0 ? Math.max(0, 1 - net.hoverT / config.hoverFade) : 1;
+				const amp = config.waveStrength * (!net.wasLit ? config.splashSize : gate * 1.1 * mellow) * dwell;
+				if (!net.wasLit || gate > 0.05) {
+					// clamp so the whole splash footprint (center + 4 neighbors)
+					// stays INTERIOR: waveStep never touches border cells, so a
+					// neighbor write landing on one would sit there undamped
+					// forever, leaking energy back into the field every step —
+					// the water never falls below the sleep threshold and the
+					// glow visibly sticks to that slab edge
+					const iu = Math.min(net.gw - 3, Math.max(2, Math.round((_netLocal.getComponent(net.a0) - net.min0) / net.cellU)));
+					const iv = Math.min(net.gh - 3, Math.max(2, Math.round((_netLocal.getComponent(net.a1) - net.min1) / net.cellV)));
+					const c = iv * net.gw + iu;
+					net.hCur[c] -= amp;
+					net.hCur[c - 1] -= amp * 0.5; net.hCur[c + 1] -= amp * 0.5;
+					net.hCur[c - net.gw] -= amp * 0.5; net.hCur[c + net.gw] -= amp * 0.5;
+				}
+			}
+			net.wasLit = lit;
+			// advance the water at a fixed substep (capped so a suspended tab
+			// doesn't spiral); skip entirely once the field has gone still
+			if (lit || net.energy > 1e-5) {
+				net.acc = Math.min(net.acc + dt, stepDt * 4);
+				while (net.acc >= stepDt) { net.acc -= stepDt; waveStep(net, config.waveLife); }
+			} else if (net.dirty) {
+				net.brt.fill(0);
+				net.hPrev.fill(0); net.hCur.fill(0);
+				net.geo.attributes.position.needsUpdate = true;   // dots eased home with the field
+				net.geo.attributes.aBright.needsUpdate = true;
+				net.dirty = false;
+				continue;
+			} else continue;
+			net.dirty = true;
+
+			// dots ride the water: brightness from the wave height under each dot,
+			// displacement along the surface following the wave's slope — every
+			// shape on screen comes out of the simulation, nothing is stamped
+			const rest = net.rest, cur = net.cur, brt = net.brt, cellIdx = net.cellIdx, h = net.hCur;
+			const gw = net.gw, a0 = net.a0, a1 = net.a1;
+			const mGain = config.waveMotion * net.cellU * 4;
+			for (let i = 0; i < net.n; i++) {
+				const ix = i * 3, c = cellIdx[i];
+				const hv = h[c];
+				brt[i] = Math.min(1, (hv > 0 ? hv : -hv) * config.glowGain);
+				// slope of the surface at this cell → in-plane drift, downhill
+				const gu = (h[c + 1] - h[c - 1]) * mGain;
+				const gv = (h[c + gw] - h[c - gw]) * mGain;
+				cur[ix + a0] = rest[ix + a0] - gu;
+				cur[ix + a1] = rest[ix + a1] - gv;
+			}
+			net.geo.attributes.position.needsUpdate = true;
+			net.geo.attributes.aBright.needsUpdate = true;
+		}
+	}
+
 	const _ringPos = new THREE.Vector3(), _ringQuat = new THREE.Quaternion();
 	const _proj = new THREE.Vector3();
 	const _focusPos = new THREE.Vector3(), _focusQuat = new THREE.Quaternion();
@@ -1562,7 +2111,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		// in from the bottom-right entry lane while it fades, instead of
 		// materializing already centered.
 		const appear = Math.min(1, easedShowcase / 0.2);
-		const lead = 1;
+		const lead = config.cardStart;
 		const t = easedSpin * (cards.length - 1 + lead) - lead;
 		const arcStep = (Math.PI * 2 / cards.length) * config.cardArc;   // angular gap between cards
 		showcaseGroup.rotation.y = -t * arcStep;
@@ -1610,6 +2159,13 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 			const cornerFade = c === focusedCard ? 1 : 1 - THREE.MathUtils.smoothstep(rad, 0.72, 1.08);
 			c.mat.opacity = appear * cornerFade * (focusedCard && c !== focusedCard ? 0.35 : 1);
 			c.textMat.opacity = c.mat.opacity;   // title fades with its card
+			if (c.glassMat) {
+				// glass slab is transmission-driven, not opacity — just gate it so
+				// faded-out cards don't pay for an FBO capture this frame
+				c.glassMesh.visible = c.mat.opacity > 0.02;
+			} else {
+				c.backMat.opacity = c.mat.opacity;   // back gradient fades with its card
+			}
 			c.textMesh.position.z = config.textDepth;
 		});
 	}
@@ -1817,6 +2373,17 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		pointer.x += (pointer.tx - pointer.x) * 0.05;
 		pointer.y += (pointer.ty - pointer.y) * 0.05;
 
+		hoverCursor.x += (pointer.tx - hoverCursor.x) * 0.25;
+		hoverCursor.y += (pointer.ty - hoverCursor.y) * 0.25;
+		hoverDotMat.uniforms.u_cursor.value.set(hoverCursor.x, hoverCursor.y);
+		hoverDotMat.uniforms.u_cursorRadius.value = config.hoverRadius;
+		hoverDotMat.uniforms.u_aspect.value = camera.aspect;
+		// same dwell timeout as the water stir: parked on the glass past
+		// hoverFade, the spotlight dots fade away too (eased, so no pop when
+		// glassDwellT resets on leaving); hoverIntensity scales the whole effect
+		const dwellTarget = (config.hoverFade > 0 ? Math.max(0, 1 - glassDwellT / config.hoverFade) : 1) * config.hoverIntensity;
+		hoverDotMat.uniforms.u_opacity.value += (dwellTarget - hoverDotMat.uniforms.u_opacity.value) * Math.min(1, dt * 4);
+
 		if (modelReady) {
 			core.rotation.y = easedProgress * Math.PI * config.rotationTurns + pointer.x * 0.4;
 			core.rotation.x = -pointer.y * 0.25;
@@ -1887,6 +2454,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		// depth parallax) so the field turns with us, plus a gentle idle drift
 		sectionDust.points.rotation.y = showcaseGroup.rotation.y * 0.6 + t * 0.02;
 		applyLighting(showcaseActive, t);
+		updateGlassNets(t, dt);
 
 		// intro override: while the wireframe particles are showing, dim the
 		// real sky so they read as "particles on black" first, then the same
@@ -1926,6 +2494,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 			applyLighting(showcaseActive, t);
 		}
 
+		setNetsVisible(false);   // keep the net out of every glass refraction FBO (else it refracts into the slab)
 		if (core.visible) {   // glass FBO passes are pointless (and expensive) once the scene is dark
 			const oldTone = renderer.toneMapping;
 			// keep the intro's bright additive particles OUT of the glass's
@@ -1946,6 +2515,34 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 			}
 			for (const p of wireframePairs) p.points.visible = true;
 		}
+		// showcase card glass-back refraction captures — same discard-the-mesh,
+		// render-the-scene trick as the hero glass above, but per card back.
+		// Every glass back (including the one being captured) is swapped to the
+		// discard material for the whole pass so (a) a glass back never refracts
+		// itself and (b) glass-through-glass recursion is avoided — each back
+		// refracts the column/dust/sky plus the OTHER cards' opaque fronts. The
+		// card's own front/text are also discarded during its capture so the
+		// glass refracts the scene behind the card rather than its own art.
+		if (showcaseGroup.visible && config.cardGlassBack) {
+			const oldTone = renderer.toneMapping;
+			renderer.toneMapping = THREE.NoToneMapping;
+			for (const c of cards) if (c.glassMat) c.glassMesh.material = discard;
+			for (const c of cards) {
+				if (!c.glassMat || !c.glassMesh.visible) continue;
+				const prevFront = c.mesh.material, prevText = c.textMesh.material;
+				c.mesh.material = discard;
+				c.textMesh.material = discard;
+				c.glassMat.time = t;
+				renderer.setRenderTarget(c.glassFbo);
+				renderer.render(scene, camera);
+				c.mesh.material = prevFront;
+				c.textMesh.material = prevText;
+			}
+			renderer.setRenderTarget(null);
+			renderer.toneMapping = oldTone;
+			for (const c of cards) if (c.glassMat) c.glassMesh.material = c.glassMat;
+		}
+		setNetsVisible(introDone);   // net stays hidden through the particle intro, on once the scene is live
 		composer.render();
 
 		fpsFrames++;
@@ -2043,6 +2640,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		otherRT.setSize(w, h);
 		gradePass.uniforms.uAspect.value = w / h;
 		glassMeshes.forEach((g) => g.fbo.setSize(Math.round(w * fboScale), Math.round(h * fboScale)));
+		cards.forEach((c) => { if (c.glassFbo) c.glassFbo.setSize(Math.round(w * cardFboScale), Math.round(h * cardFboScale)); });
 		particles.mat.uniforms.u_size.value = config.particleSize * renderer.getPixelRatio();
 		readScroll();
 	});
@@ -2050,7 +2648,13 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 	window.addEventListener("pointermove", (e) => {
 		pointer.tx = (e.clientX / window.innerWidth) * 2 - 1;
 		pointer.ty = -((e.clientY / window.innerHeight) * 2 - 1);
+		hoverPointer.x = e.clientX; hoverPointer.y = e.clientY; hoverPointer.active = true;
 	}, { passive: true });
+	// touch has no "hover": drop the glow when the finger lifts. Mouse re-activates
+	// on the next move, so deactivating it on click/leave is harmless.
+	window.addEventListener("pointerup", (e) => { if (e.pointerType !== "mouse") hoverPointer.active = false; }, { passive: true });
+	window.addEventListener("pointercancel", () => { hoverPointer.active = false; }, { passive: true });
+	window.addEventListener("blur", () => { hoverPointer.active = false; });
 
 	document.getElementById("upload").addEventListener("change", (e) => {
 		loadGroundFile(e.target.files[0]);
@@ -2068,6 +2672,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 	});
 
 	document.getElementById("replayBtn").addEventListener("click", () => beginIntro());
+
 
 	const copyBtn = document.getElementById("copyBtn");
 	copyBtn.addEventListener("click", () => {
@@ -2097,6 +2702,9 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 	bindSlider("s-introdur", "v-introdur", (v) => { config.introScale = v; }, (v) => (INTRO_BASE_S * v).toFixed(1) + "s");
 	bindSlider("s-introdens", "v-introdens", (v) => { config.introDensity = v; }, (v) => v.toFixed(1) + "×");
 	bindSlider("s-scenedet", "v-scenedet", (v) => { config.sceneDetail = v; }, (v) => v.toFixed(1) + "×");
+	bindSlider("s-hoverint", "v-hoverint", (v) => { config.hoverIntensity = v; }, (v) => v.toFixed(2));
+	bindSlider("s-hoverrad", "v-hoverrad", (v) => { config.hoverRadius = v; }, (v) => v.toFixed(2));
+	bindSlider("s-hoverdot", "v-hoverdot", (v) => { config.hoverDotSize = v; hoverDotMat.uniforms.u_size.value = v * renderer.getPixelRatio(); }, (v) => v.toFixed(1));
 	bindSlider("s-count", "v-count", (v) => { config.particleCount = Math.round(v); rebuildParticles(); }, (v) => String(Math.round(v)));
 	bindSlider("s-glow", "v-glow", (v) => { config.glowSpeed = v; }, (v) => v.toFixed(2) + "×");
 	bindSlider("s-size", "v-size", (v) => { config.particleSize = v; particles.mat.uniforms.u_size.value = v * renderer.getPixelRatio(); }, (v) => String(Math.round(v)));
@@ -2117,6 +2725,16 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 	bindSlider("s-lccr", "v-lccr", (v) => { config.logoClearcoatRough = v; glassMeshes.forEach(({ mat }) => { mat.clearcoatRoughness = v; }); }, (v) => v.toFixed(2));
 	bindSlider("s-lenv", "v-lenv", (v) => { config.logoEnvIntensity = v; glassMeshes.forEach(({ mat }) => { mat.envMapIntensity = v; }); }, (v) => v.toFixed(2));
 	bindSlider("s-latt", "v-latt", (v) => { config.logoAttenuationDist = v; glassMeshes.forEach(({ mat }) => { mat.attenuationDistance = v; }); }, (v) => v.toFixed(1));
+	bindSlider("s-netnodes", "v-netnodes", (v) => { config.netDensity = v; rebuildGlassNets(); }, (v) => v.toFixed(2) + "×");
+	bindSlider("s-netsize", "v-netsize", (v) => { config.netSize = v; }, (v) => String(Math.round(v)));
+	bindSlider("s-wavespeed", "v-wavespeed", (v) => { config.waveSpeed = v; }, (v) => v.toFixed(2));
+	bindSlider("s-wavelife", "v-wavelife", (v) => { config.waveLife = v; }, (v) => v.toFixed(3));
+	bindSlider("s-wavestr", "v-wavestr", (v) => { config.waveStrength = v; }, (v) => v.toFixed(2));
+	bindSlider("s-hoverfade", "v-hoverfade", (v) => { config.hoverFade = v; }, (v) => v > 0 ? v.toFixed(1) + "s" : "off");
+	bindSlider("s-splash", "v-splash", (v) => { config.splashSize = v; }, (v) => v.toFixed(1));
+	bindSlider("s-settle", "v-settle", (v) => { config.settleRate = v; }, (v) => v.toFixed(2));
+	bindSlider("s-glowgain", "v-glowgain", (v) => { config.glowGain = v; }, (v) => v.toFixed(1));
+	bindSlider("s-wavemove", "v-wavemove", (v) => { config.waveMotion = v; }, (v) => v.toFixed(2));
 	bindSlider("s-rot", "v-rot", (v) => { config.rotationTurns = v; }, (v) => v.toFixed(1));
 	bindSlider("s-gx", "v-gx", (v) => { config.groundX = v; applyGround(); }, (v) => v.toFixed(1));
 	bindSlider("s-gy", "v-gy", (v) => { config.groundY = v; applyGround(); }, (v) => v.toFixed(1));
@@ -2155,6 +2773,25 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 	bindSlider("s-carddepth", "v-carddepth", (v) => { config.cardDepth = v; }, (v) => v.toFixed(1));
 	bindSlider("s-cardsize", "v-cardsize", (v) => { config.cardScale = v; }, (v) => v.toFixed(2));
 	bindSlider("s-cardarc", "v-cardarc", (v) => { config.cardArc = v; }, (v) => v.toFixed(2));
+	bindSlider("s-cardstart", "v-cardstart", (v) => { config.cardStart = v; }, (v) => v.toFixed(2));
+	// card thickness slider removed (card is now flat) — keep the config + handler
+	// guarded in case the element was re-added later
+	{
+		const thickSlider = document.getElementById("s-cardthick");
+		if (thickSlider) bindSlider("s-cardthick", "v-cardthick", (v) => { config.cardThickness = v; applyCardThickness(); }, (v) => v.toFixed(2));
+	}
+	bindSlider("s-cardglassgap", "v-cardglassgap", (v) => {
+		config.cardGlassGap = v;
+		cards.forEach((c) => { if (c.glassMat) c.glassMesh.position.z = -v; });
+	}, (v) => v.toFixed(2));
+	bindSlider("s-cardglassscale", "v-cardglassscale", (v) => {
+		config.cardGlassScale = v;
+		cards.forEach((c) => { if (c.glassMat) c.glassMesh.scale.setScalar(v); });
+	}, (v) => v.toFixed(2));
+	bindSlider("s-cardglassthick", "v-cardglassthick", (v) => {
+		config.cardGlassThickness = v;
+		applyGlassSlab();
+	}, (v) => v.toFixed(2));
 	bindSlider("s-textdepth", "v-textdepth", (v) => { config.textDepth = v; }, (v) => v.toFixed(2));
 	bindSlider("s-skyglowx", "v-skyglowx", (v) => { config.skyGlowX = v; }, (v) => v.toFixed(2));   // aligns the column light to the sun
 	bindSlider("s-glowspin", "v-glowspin", (v) => { config.glowSpin = v; }, (v) => v.toFixed(1));

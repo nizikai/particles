@@ -16,7 +16,7 @@
 	<div id="fps">— fps</div>
 	<div class="notice" id="notice"></div>
 
-	<div class="panel" id="panel">
+	<div class="panel collapsed" id="panel">
 		<button class="panel-toggle" id="panelToggle">Controls</button>
 		<div class="panel-body">
 			<div class="section-label">Intro</div>
@@ -37,6 +37,71 @@
 				<input type="range" id="s-scenedet" min="0.5" max="3" step="0.1" value="2.5" />
 				<div class="hint">Dotted edge wireframe of the scene — denser edge lines, thinner surface fill (not the logo). Takes effect on next Replay.</div>
 			</div>
+			<div class="section-label">Cursor hover</div>
+			<div class="ctrl">
+				<label>Hover intensity <span class="val" id="v-hoverint">1.00</span></label>
+				<input type="range" id="s-hoverint" min="0" max="1" step="0.05" value="1" />
+				<div class="hint">Preloader dots that follow the cursor over any glass (logo + showcase cards). 0 = off.</div>
+			</div>
+			<div class="ctrl">
+				<label>Hover radius <span class="val" id="v-hoverrad">0.35</span></label>
+				<input type="range" id="s-hoverrad" min="0.05" max="1" step="0.05" value="0.35" />
+			</div>
+			<div class="ctrl">
+				<label>Hover dot size <span class="val" id="v-hoverdot">3.0</span></label>
+				<input type="range" id="s-hoverdot" min="1" max="10" step="0.5" value="3" />
+			</div>
+			<div class="ctrl">
+				<label>Hover fade <span class="val" id="v-hoverfade">2.0s</span></label>
+				<input type="range" id="s-hoverfade" min="0" max="10" step="0.5" value="2" />
+				<div class="hint">After this long hovering the same glass, the water stir and the hover dots die out (0 = never). Leaving resets it.</div>
+			</div>
+			<div class="section-label">Glass water</div>
+			<div class="ctrl">
+				<label>Net density <span class="val" id="v-netnodes">1.00×</span></label>
+				<input type="range" id="s-netnodes" min="0.2" max="3" step="0.05" value="1" />
+				<div class="hint">Dot density on each glass surface. Resamples the net.</div>
+			</div>
+			<div class="ctrl">
+				<label>Net node size <span class="val" id="v-netsize">10</span></label>
+				<input type="range" id="s-netsize" min="2" max="40" step="1" value="10" />
+			</div>
+			<div class="ctrl">
+				<label>Wave speed <span class="val" id="v-wavespeed">1.00</span></label>
+				<input type="range" id="s-wavespeed" min="0.3" max="3" step="0.05" value="1" />
+				<div class="hint">How fast ripples travel across the water.</div>
+			</div>
+			<div class="ctrl">
+				<label>Wave life <span class="val" id="v-wavelife">0.960</span></label>
+				<input type="range" id="s-wavelife" min="0.93" max="0.998" step="0.002" value="0.96" />
+				<div class="hint">Higher = ripples live longer and slosh; lower = thick, calm water.</div>
+			</div>
+			<div class="ctrl">
+				<label>Stir strength <span class="val" id="v-wavestr">0.50</span></label>
+				<input type="range" id="s-wavestr" min="0.2" max="3" step="0.05" value="0.5" />
+				<div class="hint">How hard the cursor stirs the water.</div>
+			</div>
+			<div class="ctrl">
+				<label>Splash size <span class="val" id="v-splash">3.0</span></label>
+				<input type="range" id="s-splash" min="0" max="6" step="0.1" value="3" />
+				<div class="hint">Amplitude of the first splash when the cursor lands on a glass.</div>
+			</div>
+			<div class="ctrl">
+				<label>Settle rate <span class="val" id="v-settle">1.00</span></label>
+				<input type="range" id="s-settle" min="0" max="3" step="0.05" value="1" />
+				<div class="hint">How fast sustained hovering calms from splash to murmur (higher = calms sooner).</div>
+			</div>
+			<div class="ctrl">
+				<label>Glow gain <span class="val" id="v-glowgain">5.0</span></label>
+				<input type="range" id="s-glowgain" min="1" max="10" step="0.1" value="5" />
+				<div class="hint">How hot the ripples read (brightness only, motion unchanged).</div>
+			</div>
+			<div class="ctrl">
+				<label>Wave motion <span class="val" id="v-wavemove">3.00</span></label>
+				<input type="range" id="s-wavemove" min="0" max="3" step="0.05" value="3" />
+				<div class="hint">How far dots physically ride the waves (0 = glow only).</div>
+			</div>
+			<div class="section-label">Hero scene</div>
 			<div class="ctrl upload-ctrl">
 				<label>Ground model</label>
 				<input type="file" id="upload" accept=".glb,.gltf" />
@@ -79,50 +144,6 @@
 				<input type="range" id="s-depth" min="0.1" max="1" step="0.05" value="1" />
 			</div>
 			<div class="ctrl">
-				<label>Transmission <span class="val" id="v-ltrans">1.00</span></label>
-				<input type="range" id="s-ltrans" min="0" max="1" step="0.01" value="1" />
-			</div>
-			<div class="ctrl">
-				<label>Roughness <span class="val" id="v-lrough">0.05</span></label>
-				<input type="range" id="s-lrough" min="0" max="1" step="0.01" value="0.05" />
-			</div>
-			<div class="ctrl">
-				<label>Metalness <span class="val" id="v-lmetal">0.00</span></label>
-				<input type="range" id="s-lmetal" min="0" max="1" step="0.01" value="0" />
-			</div>
-			<div class="ctrl">
-				<label>IOR <span class="val" id="v-lior">1.80</span></label>
-				<input type="range" id="s-lior" min="1" max="2.5" step="0.05" value="1.8" />
-			</div>
-			<div class="ctrl">
-				<label>Thickness <span class="val" id="v-lthick">0.70</span></label>
-				<input type="range" id="s-lthick" min="0" max="3" step="0.05" value="0.7" />
-			</div>
-			<div class="ctrl">
-				<label>Glass chroma <span class="val" id="v-lchroma">0.120</span></label>
-				<input type="range" id="s-lchroma" min="0" max="0.2" step="0.005" value="0.12" />
-			</div>
-			<div class="ctrl">
-				<label>Anisotropy <span class="val" id="v-laniso">0.12</span></label>
-				<input type="range" id="s-laniso" min="0" max="1" step="0.05" value="0.12" />
-			</div>
-			<div class="ctrl">
-				<label>Clearcoat <span class="val" id="v-lcc">1.00</span></label>
-				<input type="range" id="s-lcc" min="0" max="1" step="0.05" value="1" />
-			</div>
-			<div class="ctrl">
-				<label>Clearcoat rough <span class="val" id="v-lccr">0.00</span></label>
-				<input type="range" id="s-lccr" min="0" max="1" step="0.01" value="0" />
-			</div>
-			<div class="ctrl">
-				<label>Env intensity <span class="val" id="v-lenv">1.60</span></label>
-				<input type="range" id="s-lenv" min="0" max="5" step="0.1" value="1.6" />
-			</div>
-			<div class="ctrl">
-				<label>Attenuation dist <span class="val" id="v-latt">10.0</span></label>
-				<input type="range" id="s-latt" min="0.1" max="10" step="0.1" value="10" />
-			</div>
-			<div class="ctrl">
 				<label>Rotation / scroll <span class="val" id="v-rot">-2.0</span></label>
 				<input type="range" id="s-rot" min="-12" max="12" step="0.5" value="-2" />
 			</div>
@@ -162,6 +183,52 @@
 				<label>Haze <span class="val" id="v-haze">0.05</span></label>
 				<input type="range" id="s-haze" min="0" max="1" step="0.05" value="0.05" />
 			</div>
+			<div class="section-label">Glass material</div>
+			<div class="ctrl">
+				<label>Transmission <span class="val" id="v-ltrans">1.00</span></label>
+				<input type="range" id="s-ltrans" min="0" max="1" step="0.01" value="1" />
+			</div>
+			<div class="ctrl">
+				<label>Roughness <span class="val" id="v-lrough">0.10</span></label>
+				<input type="range" id="s-lrough" min="0" max="1" step="0.01" value="0.1" />
+			</div>
+			<div class="ctrl">
+				<label>Metalness <span class="val" id="v-lmetal">0.00</span></label>
+				<input type="range" id="s-lmetal" min="0" max="1" step="0.01" value="0" />
+			</div>
+			<div class="ctrl">
+				<label>IOR <span class="val" id="v-lior">2.00</span></label>
+				<input type="range" id="s-lior" min="1" max="2.5" step="0.05" value="2" />
+			</div>
+			<div class="ctrl">
+				<label>Thickness <span class="val" id="v-lthick">0.70</span></label>
+				<input type="range" id="s-lthick" min="0" max="3" step="0.05" value="0.7" />
+			</div>
+			<div class="ctrl">
+				<label>Glass chroma <span class="val" id="v-lchroma">0.150</span></label>
+				<input type="range" id="s-lchroma" min="0" max="0.2" step="0.005" value="0.15" />
+			</div>
+			<div class="ctrl">
+				<label>Anisotropy <span class="val" id="v-laniso">0.50</span></label>
+				<input type="range" id="s-laniso" min="0" max="1" step="0.05" value="0.5" />
+			</div>
+			<div class="ctrl">
+				<label>Clearcoat <span class="val" id="v-lcc">1.00</span></label>
+				<input type="range" id="s-lcc" min="0" max="1" step="0.05" value="1" />
+			</div>
+			<div class="ctrl">
+				<label>Clearcoat rough <span class="val" id="v-lccr">0.00</span></label>
+				<input type="range" id="s-lccr" min="0" max="1" step="0.01" value="0" />
+			</div>
+			<div class="ctrl">
+				<label>Env intensity <span class="val" id="v-lenv">1.60</span></label>
+				<input type="range" id="s-lenv" min="0" max="5" step="0.1" value="1.6" />
+			</div>
+			<div class="ctrl">
+				<label>Attenuation dist <span class="val" id="v-latt">10.0</span></label>
+				<input type="range" id="s-latt" min="0.1" max="10" step="0.1" value="10" />
+			</div>
+			<div class="section-label">Grade &amp; scroll</div>
 			<div class="ctrl">
 				<label>Bloom <span class="val" id="v-bloom">0.15</span></label>
 				<input type="range" id="s-bloom" min="0" max="3" step="0.05" value="0.15" />
@@ -275,6 +342,25 @@
 			<div class="ctrl">
 				<label>Card spread <span class="val" id="v-cardarc">0.85</span></label>
 				<input type="range" id="s-cardarc" min="0.3" max="2" step="0.05" value="0.85" />
+			</div>
+			<div class="ctrl">
+				<label>Card start <span class="val" id="v-cardstart">1.85</span></label>
+				<input type="range" id="s-cardstart" min="0" max="4" step="0.05" value="1.85" />
+			</div>
+			<div class="ctrl">
+				<label>Glass gap <span class="val" id="v-cardglassgap">0.20</span></label>
+				<input type="range" id="s-cardglassgap" min="0" max="3" step="0.05" value="0.2" />
+				<div class="hint">z distance between the flat card and the separate glass slab behind it.</div>
+			</div>
+			<div class="ctrl">
+				<label>Glass scale <span class="val" id="v-cardglassscale">1.05</span></label>
+				<input type="range" id="s-cardglassscale" min="0.3" max="2" step="0.05" value="1.05" />
+				<div class="hint">Footprint of the glass slab relative to the card.</div>
+			</div>
+			<div class="ctrl">
+				<label>Glass thickness <span class="val" id="v-cardglassthick">0.10</span></label>
+				<input type="range" id="s-cardglassthick" min="0" max="1.5" step="0.02" value="0.1" />
+				<div class="hint">Geometric depth of the glass slab (real extruded volume).</div>
 			</div>
 			<div class="ctrl">
 				<label>Text depth <span class="val" id="v-textdepth">0.30</span></label>
