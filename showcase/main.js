@@ -176,10 +176,14 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 	const hoverDotMat = wireframeParticleMat.clone();
 	hoverDotMat.uniforms.u_spawnElapsed.value = 1e4;   // long past every spawn delay — dots are always fully "spawned"
 	hoverDotMat.uniforms.u_cursorReveal.value = 1;     // visible only inside the cursor spotlight
+	// the showcase cards' own clone — separate size/radius/opacity uniforms are
+	// what let the two sections tune independently (one shared material was why
+	// they couldn't before)
+	const hoverCardMat = hoverDotMat.clone();
 	const hoverLogoPoints = [];
-	function makeHoverDots(mesh, refDiag, surfSpacing, edgeDensity = 1) {
-		hoverDotMat.uniforms.u_size.value = config.hoverDotSize * renderer.getPixelRatio();
-		const points = makeWireframePoints(mesh, refDiag, hoverDotMat, surfSpacing, 20, edgeDensity);
+	function makeHoverDots(mesh, refDiag, surfSpacing, edgeDensity = 1, mat = hoverDotMat) {
+		mat.uniforms.u_size.value = (mat === hoverCardMat ? config.scHoverDotSize : config.hoverDotSize) * renderer.getPixelRatio();
+		const points = makeWireframePoints(mesh, refDiag, mat, surfSpacing, 20, edgeDensity);
 		// child of the glass, not the sibling makeWireframePoints sets up: the
 		// dots then inherit its transform AND visibility, so they vanish with it
 		// (intro hides the logo, cards fade in/out) with no per-frame syncing
@@ -1522,7 +1526,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 			// 8× edge density: dots pack tight enough along the slab outline to
 			// overlap on screen, so the edges read as a glowing line under the
 			// spotlight like the logo (whose thin bars stack edges naturally)
-			c.hoverDots = makeHoverDots(mesh, slabDiag, slabDiag * 0.03, 8);
+			c.hoverDots = makeHoverDots(mesh, slabDiag, slabDiag * 0.03, 8, hoverCardMat);
 			mesh.visible = false;   // updateShowcase drives visibility from the card's fade (after makeHoverDots, which re-shows the mesh)
 		} else {
 			const backMat = new THREE.MeshBasicMaterial({
@@ -2397,14 +2401,20 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 
 		hoverCursor.x += (pointer.tx - hoverCursor.x) * 0.25;
 		hoverCursor.y += (pointer.ty - hoverCursor.y) * 0.25;
-		hoverDotMat.uniforms.u_cursor.value.set(hoverCursor.x, hoverCursor.y);
-		hoverDotMat.uniforms.u_cursorRadius.value = config.hoverRadius;
-		hoverDotMat.uniforms.u_aspect.value = camera.aspect;
-		// same dwell timeout as the water stir: parked on the glass past
-		// hoverFade, the spotlight dots fade away too (eased, so no pop when
-		// glassDwellT resets on leaving); hoverIntensity scales the whole effect
-		const dwellTarget = (config.hoverFade > 0 ? Math.max(0, 1 - glassDwellT / config.hoverFade) : 1) * config.hoverIntensity;
-		hoverDotMat.uniforms.u_opacity.value += (dwellTarget - hoverDotMat.uniforms.u_opacity.value) * Math.min(1, dt * 4);
+		// same dwell timeout as the water stir: parked on the glass past its
+		// section's hoverFade, the spotlight dots fade away too (eased, so no
+		// pop when glassDwellT resets on leaving); intensity scales the effect.
+		// Hero and showcase materials each read their own section's keys.
+		for (const [m, iK, rK, fK] of [
+			[hoverDotMat, "hoverIntensity", "hoverRadius", "hoverFade"],
+			[hoverCardMat, "scHoverIntensity", "scHoverRadius", "scHoverFade"]
+		]) {
+			m.uniforms.u_cursor.value.set(hoverCursor.x, hoverCursor.y);
+			m.uniforms.u_cursorRadius.value = config[rK];
+			m.uniforms.u_aspect.value = camera.aspect;
+			const target = (config[fK] > 0 ? Math.max(0, 1 - glassDwellT / config[fK]) : 1) * config[iK];
+			m.uniforms.u_opacity.value += (target - m.uniforms.u_opacity.value) * Math.min(1, dt * 4);
+		}
 
 		if (modelReady) {
 			core.rotation.y = easedProgress * Math.PI * config.rotationTurns + pointer.x * 0.4;
