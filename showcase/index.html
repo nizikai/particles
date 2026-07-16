@@ -112,8 +112,18 @@
 				<input type="range" id="s-schoverrad" min="0.05" max="1" step="0.05" value="0.35" />
 			</div>
 			<div class="ctrl">
-				<label>Hover dot size <span class="val" id="v-schoverdot">5.0</span></label>
-				<input type="range" id="s-schoverdot" min="1" max="10" step="0.5" value="5" />
+				<label>Edge brightness <span class="val" id="v-scedgebright">3.00×</span></label>
+				<input type="range" id="s-scedgebright" min="0" max="3" step="0.1" value="3" />
+				<div class="hint">Brightness of the dotted perimeter near the cursor.</div>
+			</div>
+			<div class="ctrl">
+				<label>Edge proximity <span class="val" id="v-scedgerad">0.55</span></label>
+				<input type="range" id="s-scedgerad" min="0.05" max="1" step="0.05" value="0.55" />
+				<div class="hint">How close the cursor must be for nearby edge segments to glow.</div>
+			</div>
+			<div class="ctrl">
+				<label>Hover dot size <span class="val" id="v-schoverdot">10.0</span></label>
+				<input type="range" id="s-schoverdot" min="1" max="10" step="0.5" value="10" />
 			</div>
 			<div class="ctrl">
 				<label>Hover fade <span class="val" id="v-schoverfade">2.0s</span></label>
@@ -125,12 +135,12 @@
 				<div class="hint">Card water-dot density. Resamples the nets.</div>
 			</div>
 			<div class="ctrl">
-				<label>Net node size <span class="val" id="v-scnetsize">14</span></label>
-				<input type="range" id="s-scnetsize" min="2" max="40" step="1" value="14" />
+				<label>Net node size <span class="val" id="v-scnetsize">20</span></label>
+				<input type="range" id="s-scnetsize" min="2" max="40" step="1" value="20" />
 			</div>
 			<div class="ctrl">
-				<label>Wave speed <span class="val" id="v-scwavespeed">1.00</span></label>
-				<input type="range" id="s-scwavespeed" min="0.3" max="3" step="0.05" value="1" />
+				<label>Wave speed <span class="val" id="v-scwavespeed">0.75</span></label>
+				<input type="range" id="s-scwavespeed" min="0.3" max="3" step="0.05" value="0.75" />
 			</div>
 			<div class="ctrl">
 				<label>Wave life <span class="val" id="v-scwavelife">0.960</span></label>

@@ -1,2 +1,5 @@
 .playwright-cli/
 .DS_Store
+
+# large screen recordings must never be committed (GitHub 100MB limit)
+*.mov

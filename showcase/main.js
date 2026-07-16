@@ -83,6 +83,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		uniforms: {
 			u_size: { value: 5.5 },
 			u_opacity: { value: 1 },
+			u_brightness: { value: 1 },
 			u_spawnElapsed: { value: 0 },        // seconds since introStart
 			u_spawnWindow: { value: PARTICLE_SPAWN_MS / 1000 },
 			u_spawnFadeIn: { value: 0.6 },        // seconds each particle takes to glow in once its own delay elapses
@@ -140,6 +141,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 			uniform vec3 u_colorA;
 			uniform vec3 u_colorB;
 			uniform float u_opacity;
+			uniform float u_brightness;
 			uniform float u_wipeNear;
 			uniform float u_wipeFar;
 			uniform float u_cursorReveal;
@@ -156,7 +158,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 				float soft = exp(-d * 8.0);
 				float core = exp(-d * 40.0);
 				if (soft < 0.02 && core < 0.02) discard;
-				vec3 col = mix(u_colorA, u_colorB, vSeed);
+				vec3 col = mix(u_colorA, u_colorB, vSeed) * u_brightness;
 				float a = soft * 0.7 + core * 1.4;
 				gl_FragColor = vec4(col, a * vSpawn * u_opacity * wipe * mix(1.0, vHover, u_cursorReveal));
 			}
@@ -174,16 +176,24 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 	// while the real glass stays fully rendered underneath. Own material clone
 	// so the intro's uniforms (spawn/opacity/wipe) never touch it.
 	const hoverDotMat = wireframeParticleMat.clone();
+	// Unlike the intro scan, post-preloader hover dots obey the scene depth
+	// buffer: foreground cards/geometry occlude particles behind them.
+	hoverDotMat.depthTest = true;
 	hoverDotMat.uniforms.u_spawnElapsed.value = 1e4;   // long past every spawn delay — dots are always fully "spawned"
 	hoverDotMat.uniforms.u_cursorReveal.value = 1;     // visible only inside the cursor spotlight
 	// the showcase cards' own clone — separate size/radius/opacity uniforms are
 	// what let the two sections tune independently (one shared material was why
 	// they couldn't before)
 	const hoverCardMat = hoverDotMat.clone();
+	// Dense card perimeter shown only on the card currently under the pointer.
+	// Keep the cursor mask enabled so only nearby edge segments glow instead of
+	// revealing the card's full outline at once.
+	const hoverCardEdgeMat = hoverCardMat.clone();
+	hoverCardEdgeMat.uniforms.u_cursorReveal.value = 1;
 	const hoverLogoPoints = [];
-	function makeHoverDots(mesh, refDiag, surfSpacing, edgeDensity = 1, mat = hoverDotMat) {
-		mat.uniforms.u_size.value = (mat === hoverCardMat ? config.scHoverDotSize : config.hoverDotSize) * renderer.getPixelRatio();
-		const points = makeWireframePoints(mesh, refDiag, mat, surfSpacing, 20, edgeDensity);
+	function makeHoverDots(mesh, refDiag, surfSpacing, edgeDensity = 1, mat = hoverDotMat, includeEdges = true) {
+		mat.uniforms.u_size.value = (mat === hoverCardMat || mat === hoverCardEdgeMat ? config.scHoverDotSize : config.hoverDotSize) * renderer.getPixelRatio();
+		const points = makeWireframePoints(mesh, refDiag, mat, surfSpacing, 20, edgeDensity, 1, false, includeEdges);
 		// child of the glass, not the sibling makeWireframePoints sets up: the
 		// dots then inherit its transform AND visibility, so they vanish with it
 		// (intro hides the logo, cards fade in/out) with no per-frame syncing
@@ -191,9 +201,8 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		points.position.set(0, 0, 0);
 		points.quaternion.identity();
 		points.scale.setScalar(1);
-		// the card slab sits BEHIND its opaque card front, so the transparent
-		// sort draws the front after the dots and covers them — force the dots
-		// last (above the title text's renderOrder 1; depthTest is already off)
+		// Draw after the title layer, while depth testing still lets foreground
+		// card faces and scene geometry occlude dots that sit behind them.
 		points.renderOrder = 2;
 		mesh.visible = true;   // makeWireframePoints hides the mesh (intro behavior) — here the glass stays
 		return points;
@@ -270,7 +279,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		}
 	}
 
-	function makeWireframePoints(mesh, refDiag, mat, surfSpacingWorld, edgeThreshold = 20, edgeDensity = 1, localScale = 1, verticalEdges = false) {
+	function makeWireframePoints(mesh, refDiag, mat, surfSpacingWorld, edgeThreshold = 20, edgeDensity = 1, localScale = 1, verticalEdges = false, includeEdges = true) {
 		// splat dots along the mesh's actual edges (not raw vertices) — this
 		// traces the same recognizable silhouette the old EdgesGeometry lines
 		// did, just rendered as a dotted line instead of a solid one.
@@ -326,9 +335,9 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 				}
 			}
 		};
-		splat(src);
+		if (includeEdges) splat(src);
 		edges.dispose();   // only used to derive the dot coordinates above, never rendered itself
-		if (verticalEdges) {
+		if (includeEdges && verticalEdges) {
 			// second, fully permissive pass (1° threshold) kept only for near-vertical
 			// runs, traced denser than the sharp pass — column flutes and shaft lines
 			// sit below the sharp threshold, so without this the pillars read as
@@ -663,8 +672,8 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		// of the hero keys above, so the two sections tune independently.
 		// Louder where the card art washes the effect out: glow gain + net size.
 		scNetDensity: 1,        // showcase glass-net dot density (cards resample on change)
-		scNetSize: 14,          // showcase node point size in px
-		scWaveSpeed: 1,         // showcase water propagation speed
+		scNetSize: 20,          // showcase node point size in px
+		scWaveSpeed: 0.75,      // showcase water propagation speed
 		scWaveLife: 0.96,       // showcase per-step damping
 		scWaveStrength: 0.5,    // showcase stir strength
 		scSplashSize: 3,        // showcase arrival splash amplitude
@@ -674,7 +683,9 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		scHoverFade: 2,         // showcase dwell seconds before stir + spotlight die (0 = never)
 		scHoverIntensity: 1,    // showcase spotlight strength (0 = off)
 		scHoverRadius: 0.35,    // showcase spotlight radius
-		scHoverDotSize: 5,      // showcase spotlight dot size
+		scEdgeBrightness: 3,    // showcase dotted-perimeter color gain
+		scEdgeRadius: 0.55,     // showcase dotted-perimeter cursor proximity
+		scHoverDotSize: 10,     // showcase spotlight dot size
 
 		rotationTurns: -2,      // turns over a full scroll (negative reverses)
 		groundX: 0,             // ground position offset (x)
@@ -719,7 +730,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		cardArc: 0.85,          // angular spread between cards (1 = even, >1 = more separated, <1 = bunched)
 		cardStart: 1.85,        // how far off-center the first card starts after the transition (0 = already centered, higher = enters from further down the entry lane)
 		cardThickness: 0,        // card edge depth — kept 0: the card is a flat plane, the glass is the separate slab behind it
-		cardGlassBack: true,    // render each card's back as refracting glass (hero-style) instead of a flat gradient — desktop only (disabled on mobile in the isMobile block below)
+		cardGlassBack: true,    // render each card's back as a refracting glass slab
 		cardGlassGap: 0.2,      // z distance between the flat card front and the floating glass slab behind it
 		cardGlassScale: 1.05,   // glass slab size multiplier relative to the card (1 = same footprint)
 		cardGlassThickness: 0.1,// geometric depth of the glass slab (real extruded volume, not just optical thickness)
@@ -752,9 +763,8 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		config.logoIOR = 1.4;
 		document.getElementById("s-lior").value = 1.4;
 		document.getElementById("v-lior").textContent = "1.40";
-		// glass-back refraction on 5 cards is too many full-screen FBO passes
-		// for a mobile GPU; keep the cheap gradient back there
-		config.cardGlassBack = false;
+		// Keep card glass enabled; the mobile path already reduces its FBO scale
+		// and transmission samples below to control the render cost.
 	}
 	const fboScale = isMobile ? 0.5 : 1;
 	// card glass FBOs run at a lower resolution than the hero's — cards are
@@ -929,6 +939,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		const mat = new THREE.ShaderMaterial({
 			transparent: true,
 			depthWrite: false,
+			depthTest: true,
 			blending: THREE.AdditiveBlending,
 			uniforms: {
 				u_time: { value: 0 },
@@ -1484,6 +1495,8 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		if (c.glassMat) {
 			if (c.glassNet) { disposeGlassNet(c.glassNet); c.glassNet = null; }
 			if (c.hoverDots) { c.hoverDots.geometry.dispose(); c.hoverDots = null; }   // leaves the tree with its parent glassMesh below
+			if (c.edgeDots) { c.edgeDots.geometry.dispose(); c.edgeDots = null; }
+			if (c.hoverProxy) { c.mesh.remove(c.hoverProxy); c.hoverProxy = null; }   // shares slabGeo; disposed once via glassMesh below
 			c.mesh.remove(c.glassMesh);
 			c.glassMesh.geometry.dispose();   // slab owns its own geometry (rebuilt on thickness change)
 			c.glassMat.dispose();
@@ -1523,11 +1536,21 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 			// light nothing. The surface-fill pass covers the face itself.
 			slabGeo.computeBoundingSphere();
 			const slabDiag = slabGeo.boundingSphere.radius * 2 * config.cardGlassScale;
-			// 8× edge density: dots pack tight enough along the slab outline to
-			// overlap on screen, so the edges read as a glowing line under the
-			// spotlight like the logo (whose thin bars stack edges naturally)
-			c.hoverDots = makeHoverDots(mesh, slabDiag, slabDiag * 0.03, 8, hoverCardMat);
+			// Surface spotlight only; edgeDots below owns the perimeter independently.
+			c.hoverDots = makeHoverDots(mesh, slabDiag, slabDiag * 0.03, 1, hoverCardMat, false);
+			c.edgeDots = makeHoverDots(mesh, slabDiag, null, 10, hoverCardEdgeMat);
 			mesh.visible = false;   // updateShowcase drives visibility from the card's fade (after makeHoverDots, which re-shows the mesh)
+			// invisible hover proxy pinned at the slab's RESTING position. On hover
+			// the whole card lifts toward the camera (translateZ in updateShowcase),
+			// which would drag the raycast target forward with it; the proxy stays
+			// where the slab rests so hover detection stays anchored to the original
+			// spot. Shares the slab geometry (raycast reads CPU attrs); never rendered.
+			const proxy = new THREE.Mesh(slabGeo);
+			proxy.visible = false;
+			proxy.position.z = -config.cardGlassGap;
+			proxy.scale.setScalar(config.cardGlassScale);
+			c.mesh.add(proxy);
+			c.hoverProxy = proxy;
 		} else {
 			const backMat = new THREE.MeshBasicMaterial({
 				vertexColors: true,
@@ -1576,9 +1599,9 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 			// populate either branch cleanly.
 			const c = {
 				mesh, mat, textMat, textMesh,
-				helixY: 0, focusT: 0, baseAngle: 0,
+				helixY: 0, focusT: 0, hoverT: 0, baseAngle: 0,
 				backMesh: null, backMat: null,
-				glassMesh: null, glassMat: null, glassFbo: null, glassNet: null, hoverDots: null
+				glassMesh: null, glassMat: null, glassFbo: null, glassNet: null, hoverDots: null, hoverProxy: null
 			};
 			cards.push(c);
 			createCardBack(c, p);
@@ -1603,6 +1626,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 			if (!c.glassMat) return;
 			c.glassMesh.geometry.dispose();
 			c.glassMesh.geometry = makeGlassSlabGeo(cardShape, config.cardGlassThickness);
+			if (c.hoverProxy) c.hoverProxy.geometry = c.glassMesh.geometry;   // proxy shares the slab footprint
 		});
 	}
 	// redraw titles once the webfont is in (textures are cheap to rebuild)
@@ -1647,7 +1671,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		// same shader / colors / size as the hero particles (buildParticles) so the
 		// section field reads identically — only u_opacity is added, to fade it in
 		const mat = new THREE.ShaderMaterial({
-			transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+			transparent: true, depthWrite: false, depthTest: true, blending: THREE.AdditiveBlending,
 			uniforms: {
 				u_time: { value: 0 },
 				u_size: { value: config.particleSize * renderer.getPixelRatio() },
@@ -1848,6 +1872,37 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 	// click-to-zoom focus + hover/click particle interaction
 	const raycaster = new THREE.Raycaster();
 	let focusedCard = null;
+	let hoveredCard = null;
+	// proximity hysteresis for hoveredCard: entering requires an exact raycast
+	// hit, but once hovered a card only releases once the cursor is more than
+	// HOVER_EXIT_PX pixels from the card's projected silhouette. This is done in
+	// SCREEN space on purpose: at grazing view angles (cards toward the side of
+	// the ring) the raycast hit flickers on/off every frame as the always-easing
+	// ring nudges the silhouette under a still cursor, and a ray-plane test can't
+	// help — near edge-on the intersection point shoots to infinity and flips
+	// sign, so "just off the edge" and "far away" map to the same plane coord.
+	// The projected rectangle, by contrast, stays well-behaved at any angle.
+	const HOVER_EXIT_PX = 22;
+	const _corner = new THREE.Vector3();
+	// corners of the glass slab in its own local space (rounded-rect footprint,
+	// spanning ±CARD_W/2 × ±CARD_H/2 at z=0 — the mesh's own transform carries the
+	// 1.05 scale and the cardGlassGap depth offset that shift its silhouette).
+	const _slabCorners = [[-CARD_W / 2, -CARD_H / 2], [CARD_W / 2, -CARD_H / 2], [CARD_W / 2, CARD_H / 2], [-CARD_W / 2, CARD_H / 2]];
+	function stillNearCard(card, px, py) {
+		const m = card.hoverProxy || card.glassMesh || card.mesh;   // resting-position proxy, so the exit band is anchored where the slab rests
+		m.updateWorldMatrix(true, false);   // child of c.mesh — its matrixWorld can lag a frame
+		let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+		for (const [lx, ly] of _slabCorners) {
+			_corner.set(lx, ly, 0).applyMatrix4(m.matrixWorld).project(camera);
+			const sx = (_corner.x * 0.5 + 0.5) * window.innerWidth;
+			const sy = (-_corner.y * 0.5 + 0.5) * window.innerHeight;
+			if (sx < minX) minX = sx; if (sx > maxX) maxX = sx;
+			if (sy < minY) minY = sy; if (sy > maxY) maxY = sy;
+		}
+		const dx = Math.max(minX - px, 0, px - maxX);
+		const dy = Math.max(minY - py, 0, py - maxY);
+		return dx * dx + dy * dy < HOVER_EXIT_PX * HOVER_EXIT_PX;
+	}
 	function pickCard(clientX, clientY) {
 		raycaster.setFromCamera(new THREE.Vector2(
 			(clientX / window.innerWidth) * 2 - 1,
@@ -1877,7 +1932,9 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 	function hoverTargets() {
 		if (core.visible) return glassMeshes.map((g) => g.mesh);
 		if (showcaseGroup.visible && config.cardGlassBack)
-			return cards.filter((c) => c.glassMesh && c.glassMesh.visible).map((c) => c.glassMesh);
+			// the resting-position proxy, not the lifted glass slab, so hover
+			// detection stays anchored where the slab rests (visible gate = the fade)
+			return cards.filter((c) => c.hoverProxy && c.glassMesh.visible).map((c) => c.hoverProxy);
 		return null;
 	}
 
@@ -1917,6 +1974,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		const gw = 64;
 		const gh = Math.max(8, Math.min(64, Math.round(gw * dims[a1] / (dims[a0] || 1))));
 		const min0 = bb.min.getComponent(a0), min1 = bb.min.getComponent(a1);
+		const max0 = bb.max.getComponent(a0), max1 = bb.max.getComponent(a1);
 		const cellU = dims[a0] / (gw - 1) || 1, cellV = dims[a1] / (gh - 1) || 1;
 		const cellIdx = new Int32Array(n);       // each dot's wave-grid cell (interior-clamped)
 		const p = new THREE.Vector3(), nn = new THREE.Vector3();
@@ -1935,7 +1993,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		geo.setAttribute("aSeed", new THREE.BufferAttribute(seed, 1));
 		geo.setAttribute("aBright", new THREE.BufferAttribute(brt, 1));     // dynamic — the glow
 		const mat = new THREE.ShaderMaterial({
-			transparent: true, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending,
+			transparent: true, depthWrite: false, depthTest: true, blending: THREE.AdditiveBlending,
 			uniforms: {
 				u_size:   { value: config.netSize },
 				u_colorA: { value: new THREE.Color(NET_COLOR_A) },
@@ -1980,7 +2038,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		const net = {
 			mesh, nodes, mat, geo, R, refR: refSize / 2, n, rest, cur, brt, cellIdx,
 			hPrev: new Float32Array(gw * gh), hCur: new Float32Array(gw * gh),
-			gw, gh, a0, a1, min0, min1, cellU, cellV,
+			gw, gh, a0, a1, min0, min1, max0, max1, cellU, cellV,
 			acc: 0, energy: 0, dirty: false, wasLit: false, hoverT: 0, isCard
 		};
 		glassNets.push(net);
@@ -2041,9 +2099,20 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 				);
 				raycaster.setFromCamera(_hoverNDC, camera);
 				const hit = raycaster.intersectObjects(targets, false)[0];
-				if (hit) { _netWorld.copy(hit.point); hitMesh = hit.object; hasHit = true; }
+				if (hit) {
+					_netWorld.copy(hit.point);
+					// showcase targets are resting-position proxies — resolve each back
+					// to its (lifted) glass mesh so the net/dwell logic below is unchanged;
+					// hero targets are real glass meshes and pass straight through.
+					const proxied = cards.find((c) => c.hoverProxy === hit.object);
+					hitMesh = proxied ? proxied.glassMesh : hit.object;
+					hasHit = true;
+				}
 			}
 		}
+		const rawHoveredCard = hasHit ? cards.find((c) => c.glassMesh === hitMesh) || null : null;
+		if (rawHoveredCard) hoveredCard = rawHoveredCard;
+		else if (hoveredCard && (!hoverPointer.active || !stillNearCard(hoveredCard, hoverPointer.x, hoverPointer.y))) hoveredCard = null;
 		glassDwellT = hasHit ? glassDwellT + dt : 0;
 		// movement-reactive: the glow follows cursor speed (screen-space, in
 		// viewport-heights/sec, eased), so a parked cursor fades to invisible
@@ -2111,15 +2180,16 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 			const rest = net.rest, cur = net.cur, brt = net.brt, cellIdx = net.cellIdx, h = net.hCur;
 			const gw = net.gw, a0 = net.a0, a1 = net.a1;
 			const mGain = netCfg(net, "waveMotion") * net.cellU * 4;
+			const maxMoveU = net.cellU * 1.5, maxMoveV = net.cellV * 1.5;
 			for (let i = 0; i < net.n; i++) {
 				const ix = i * 3, c = cellIdx[i];
 				const hv = h[c];
 				brt[i] = Math.min(1, (hv > 0 ? hv : -hv) * netCfg(net, "glowGain"));
 				// slope of the surface at this cell → in-plane drift, downhill
-				const gu = (h[c + 1] - h[c - 1]) * mGain;
-				const gv = (h[c + gw] - h[c - gw]) * mGain;
-				cur[ix + a0] = rest[ix + a0] - gu;
-				cur[ix + a1] = rest[ix + a1] - gv;
+				const gu = THREE.MathUtils.clamp((h[c + 1] - h[c - 1]) * mGain, -maxMoveU, maxMoveU);
+				const gv = THREE.MathUtils.clamp((h[c + gw] - h[c - gw]) * mGain, -maxMoveV, maxMoveV);
+				cur[ix + a0] = THREE.MathUtils.clamp(rest[ix + a0] - gu, net.min0, net.max0);
+				cur[ix + a1] = THREE.MathUtils.clamp(rest[ix + a1] - gv, net.min1, net.max1);
 			}
 			net.geo.attributes.position.needsUpdate = true;
 			net.geo.attributes.aBright.needsUpdate = true;
@@ -2129,6 +2199,12 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 	const _ringPos = new THREE.Vector3(), _ringQuat = new THREE.Quaternion();
 	const _proj = new THREE.Vector3();
 	const _focusPos = new THREE.Vector3(), _focusQuat = new THREE.Quaternion();
+	// hover lift easing: exponential approach toward the target (1 hovered, 0 not),
+	// which is fast when far and slow as it settles — a snappy rise with a long
+	// luxurious tail. A higher rise rate than fall rate makes hovering feel
+	// responsive while the release stays gentle. (rate ≈ 1/time-constant in sec)
+	const HOVER_RISE_RATE = 9;
+	const HOVER_FALL_RATE = 5;
 	function updateShowcase(dt) {
 		// helix: cards step down by showcasePitch each; the whole group rises so the
 		// current card stays at eye level — incoming cards enter from the bottom
@@ -2156,6 +2232,12 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 			c.helixY = -i * config.showcasePitch;
 			const baseAngle = i * arcStep;   // spread scales the per-card angle live
 			c.focusT += ((c === focusedCard ? 1 : 0) - c.focusT) * Math.min(1, dt * 6);
+			const hoverActive = c === hoveredCard && c !== focusedCard;
+			// exponential ease toward the hover target: fast start, long soft settle.
+			// 1 - exp(-dt*rate) keeps it frame-rate independent and always in [0,1].
+			const hoverGoal = hoverActive ? 1 : 0;
+			const hoverRate = hoverActive ? HOVER_RISE_RATE : HOVER_FALL_RATE;
+			c.hoverT += (hoverGoal - c.hoverT) * (1 - Math.exp(-dt * hoverRate));
 			const s = (0.85 + appear * 0.15) * config.cardScale;
 			c.mesh.scale.setScalar(s);
 			// helix transform (local to showcaseGroup)
@@ -2174,6 +2256,20 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 			} else {
 				c.mesh.position.copy(_ringPos);
 				c.mesh.quaternion.copy(_ringQuat);
+			}
+			// Keep the card anchored to the helix while easing it slightly toward
+			// the viewer along its own facing direction. hoverT already carries the
+			// easing (exponential settle above), so map it straight to the lift.
+			const lift = c.hoverT * 0.35;
+			c.mesh.translateZ(lift);
+			// hold the hover proxy at the slab's resting position: cancel the lift
+			// in the proxy's own local z. translateZ moves c.mesh in unscaled group
+			// units while the proxy's local z is scaled by the card scale s, so the
+			// compensation is lift/s. Refresh its world matrix by hand — the renderer
+			// skips invisible objects, so it won't be updated during render.
+			if (c.hoverProxy) {
+				c.hoverProxy.position.z = -config.cardGlassGap - lift / s;
+				c.hoverProxy.updateWorldMatrix(true, false);
 			}
 			// fade the whole card (body + text together) as it travels toward a screen
 			// corner, so exiting cards don't leave their glowing text detached behind.
@@ -2407,7 +2503,8 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		// Hero and showcase materials each read their own section's keys.
 		for (const [m, iK, rK, fK] of [
 			[hoverDotMat, "hoverIntensity", "hoverRadius", "hoverFade"],
-			[hoverCardMat, "scHoverIntensity", "scHoverRadius", "scHoverFade"]
+			[hoverCardMat, "scHoverIntensity", "scHoverRadius", "scHoverFade"],
+			[hoverCardEdgeMat, "scHoverIntensity", "scEdgeRadius", "scHoverFade"]
 		]) {
 			m.uniforms.u_cursor.value.set(hoverCursor.x, hoverCursor.y);
 			m.uniforms.u_cursorRadius.value = config[rK];
@@ -2415,6 +2512,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 			const target = (config[fK] > 0 ? Math.max(0, 1 - glassDwellT / config[fK]) : 1) * config[iK];
 			m.uniforms.u_opacity.value += (target - m.uniforms.u_opacity.value) * Math.min(1, dt * 4);
 		}
+		hoverCardEdgeMat.uniforms.u_brightness.value = config.scEdgeBrightness;
 
 		if (modelReady) {
 			core.rotation.y = easedProgress * Math.PI * config.rotationTurns + pointer.x * 0.4;
@@ -2739,7 +2837,13 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 	bindSlider("s-hoverdot", "v-hoverdot", (v) => { config.hoverDotSize = v; hoverDotMat.uniforms.u_size.value = v * renderer.getPixelRatio(); }, (v) => v.toFixed(1));
 	bindSlider("s-schoverint", "v-schoverint", (v) => { config.scHoverIntensity = v; }, (v) => v.toFixed(2));
 	bindSlider("s-schoverrad", "v-schoverrad", (v) => { config.scHoverRadius = v; }, (v) => v.toFixed(2));
-	bindSlider("s-schoverdot", "v-schoverdot", (v) => { config.scHoverDotSize = v; hoverCardMat.uniforms.u_size.value = v * renderer.getPixelRatio(); }, (v) => v.toFixed(1));
+	bindSlider("s-scedgebright", "v-scedgebright", (v) => { config.scEdgeBrightness = v; }, (v) => v.toFixed(2) + "×");
+	bindSlider("s-scedgerad", "v-scedgerad", (v) => { config.scEdgeRadius = v; }, (v) => v.toFixed(2));
+	bindSlider("s-schoverdot", "v-schoverdot", (v) => {
+		config.scHoverDotSize = v;
+		hoverCardMat.uniforms.u_size.value = v * renderer.getPixelRatio();
+		hoverCardEdgeMat.uniforms.u_size.value = v * renderer.getPixelRatio();
+	}, (v) => v.toFixed(1));
 	bindSlider("s-schoverfade", "v-schoverfade", (v) => { config.scHoverFade = v; }, (v) => v > 0 ? v.toFixed(1) + "s" : "off");
 	bindSlider("s-scnetnodes", "v-scnetnodes", (v) => { config.scNetDensity = v; rebuildGlassNets(); }, (v) => v.toFixed(2) + "×");
 	bindSlider("s-scnetsize", "v-scnetsize", (v) => { config.scNetSize = v; }, (v) => String(Math.round(v)));
