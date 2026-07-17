@@ -1,0 +1,296 @@
+@font-face { font-family: "Clash Grotesk"; src: url("fonts/ClashGrotesk-Extralight.otf") format("opentype"); font-weight: 200; font-style: normal; font-display: swap; }
+@font-face { font-family: "Clash Grotesk"; src: url("fonts/ClashGrotesk-Light.otf")      format("opentype"); font-weight: 300; font-style: normal; font-display: swap; }
+@font-face { font-family: "Clash Grotesk"; src: url("fonts/ClashGrotesk-Regular.otf")    format("opentype"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "Clash Grotesk"; src: url("fonts/ClashGrotesk-Medium.otf")     format("opentype"); font-weight: 500; font-style: normal; font-display: swap; }
+@font-face { font-family: "Clash Grotesk"; src: url("fonts/ClashGrotesk-Semibold.otf")   format("opentype"); font-weight: 600; font-style: normal; font-display: swap; }
+@font-face { font-family: "Clash Grotesk"; src: url("fonts/ClashGrotesk-Bold.otf")       format("opentype"); font-weight: 700; font-style: normal; font-display: swap; }
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+	--bg-top: #000000;
+	--bg-bottom: #0a0603;
+	--accent: #f6b32c;
+	--ink: #f5ead3;
+}
+
+html, body {
+	width: 100%;
+	background: linear-gradient(180deg, var(--bg-top) 0%, #050302 45%, var(--bg-bottom) 100%);
+	color: var(--ink);
+	font-family: "Clash Grotesk", "Avenir Next", system-ui, sans-serif;
+}
+
+.scroll-track { height: 400vh; }
+
+#webgl {
+	position: fixed;
+	inset: 0;
+	width: 100vw;
+	height: 100vh;
+	height: 100lvh;
+	display: block;
+	z-index: 1;
+	touch-action: pan-y;
+}
+
+#fps {
+	position: fixed;
+	top: 12px;
+	left: 14px;
+	z-index: 6;
+	padding: 4px 8px;
+	border-radius: 6px;
+	background: rgb(8 5 2 / 0.6);
+	color: var(--accent);
+	font: 600 11px/1 ui-monospace, "SF Mono", Menlo, monospace;
+	letter-spacing: 0.08em;
+	pointer-events: none;
+}
+
+.panel {
+	position: fixed;
+	top: 16px;
+	right: 16px;
+	z-index: 6;
+	width: 248px;
+	font: 11px/1.4 inherit;
+	color: var(--ink);
+	user-select: none;
+}
+
+.panel-toggle {
+	width: 100%;
+	padding: 9px 12px;
+	border: 1px solid rgb(246 179 44 / 0.4);
+	border-radius: 9px;
+	background: rgb(10 6 2 / 0.82);
+	color: var(--accent);
+	font: 600 11px/1 inherit;
+	letter-spacing: 0.16em;
+	text-transform: uppercase;
+	cursor: pointer;
+	backdrop-filter: blur(6px);
+}
+
+.panel-body {
+	margin-top: 8px;
+	padding: 14px 14px 6px;
+	border: 1px solid rgb(246 179 44 / 0.22);
+	border-radius: 10px;
+	background: rgb(8 5 2 / 0.86);
+	backdrop-filter: blur(8px);
+	max-height: calc(100vh - 80px);
+	overflow-y: auto;
+}
+
+.panel.collapsed .panel-body { display: none; }
+
+.ctrl { margin-bottom: 14px; }
+
+.ctrl label {
+	display: flex;
+	justify-content: space-between;
+	margin-bottom: 6px;
+	color: rgb(245 234 211 / 0.78);
+	letter-spacing: 0.04em;
+}
+
+.ctrl label .val { color: var(--accent); font-variant-numeric: tabular-nums; }
+
+.section-label {
+	margin: 16px 0 12px;
+	padding-top: 12px;
+	border-top: 1px solid rgb(246 179 44 / 0.18);
+	color: var(--accent);
+	font: 600 10px/1 inherit;
+	letter-spacing: 0.2em;
+	text-transform: uppercase;
+}
+
+.copy-btn {
+	width: 100%;
+	margin: 2px 0 8px;
+	padding: 9px 12px;
+	border: 1px solid rgb(246 179 44 / 0.5);
+	border-radius: 9px;
+	background: rgb(246 179 44 / 0.14);
+	color: var(--accent);
+	font: 600 11px/1 inherit;
+	letter-spacing: 0.16em;
+	text-transform: uppercase;
+	cursor: pointer;
+}
+.copy-btn:hover { background: rgb(246 179 44 / 0.24); }
+
+.ctrl input[type="range"] {
+	-webkit-appearance: none;
+	appearance: none;
+	width: 100%;
+	height: 3px;
+	border-radius: 3px;
+	background: rgb(246 179 44 / 0.25);
+	outline: none;
+	cursor: pointer;
+}
+
+.ctrl input[type="range"]::-webkit-slider-thumb {
+	-webkit-appearance: none;
+	appearance: none;
+	width: 14px;
+	height: 14px;
+	border-radius: 50%;
+	background: var(--accent);
+	box-shadow: 0 0 8px rgb(246 179 44 / 0.7);
+}
+
+.ctrl input[type="range"]::-moz-range-thumb {
+	width: 14px;
+	height: 14px;
+	border: none;
+	border-radius: 50%;
+	background: var(--accent);
+	box-shadow: 0 0 8px rgb(246 179 44 / 0.7);
+}
+
+/* --- lofi VS Code skeleton -------------------------------------------- */
+/* Never rendered: layout-only source for the particle skeleton. main.js reads
+   the .cs-stack rect to size the real 3D glass slab (MeshTransmissionMaterial)
+   rendered behind this window in WebGL, and samples every block's rect into
+   the amber dot skeleton. --bar is the warm placeholder tint for every block. */
+#codeSkeleton {
+	--bar: rgb(245 234 211 / 0.2);
+	position: fixed;
+	inset: 0;
+	z-index: 2;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	opacity: 0;              /* never shown — layout-only source for the particle skeleton */
+	pointer-events: none;
+}
+.cs-stack {
+	position: relative;
+	height: min(520px, 66vh);
+	aspect-ratio: 3.4 / 2.1;
+}
+.cs-window {
+	position: relative;
+	width: 100%;
+	height: 100%;
+	display: flex;
+	flex-direction: column;
+	border-radius: 18px;
+	overflow: hidden;
+	background: transparent;
+}
+.cs-title {
+	height: 34px;
+	flex: none;
+	display: flex;
+	align-items: center;
+	gap: 9px;
+	padding: 0 15px;
+	border-bottom: 1px solid rgb(245 234 211 / 0.07);
+}
+.cs-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--bar); }
+.cs-body { flex: 1; display: flex; min-height: 0; }
+.cs-activity {
+	width: 52px;
+	flex: none;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 24px;
+	padding-top: 20px;
+	border-right: 1px solid rgb(245 234 211 / 0.06);
+}
+.cs-activity span { width: 26px; height: 26px; border-radius: 7px; background: var(--bar); }
+.cs-sidebar {
+	width: 190px;
+	flex: none;
+	padding: 20px 18px 0;
+	border-right: 1px solid rgb(245 234 211 / 0.06);
+}
+.cs-side-head { height: 11px; width: 42%; margin-bottom: 26px; border-radius: 4px; background: var(--bar); }
+.cs-file { height: 11px; width: 68%; margin-bottom: 20px; border-radius: 4px; background: var(--bar); }
+.cs-file.cs-in { margin-left: 20px; width: 52%; }
+.cs-file:nth-child(3) { width: 48%; }
+.cs-file:nth-child(5) { width: 60%; }
+.cs-main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.cs-tabs { height: 40px; flex: none; display: flex; gap: 2px; border-bottom: 1px solid rgb(245 234 211 / 0.06); }
+.cs-tab { width: 132px; }
+.cs-tab-on { box-shadow: inset 0 -2px 0 rgb(246 179 44 / 0.35); }
+.cs-editor { flex: 1; display: flex; min-height: 0; padding: 16px 0; }
+/* fake line-number ticks: short warm dashes repeated down the gutter column */
+.cs-gutter {
+	width: 40px;
+	flex: none;
+	background:
+		repeating-linear-gradient(
+			to bottom,
+			var(--bar) 0 11px,
+			transparent 11px 43px
+		) 14px 5px / 16px 100% no-repeat;
+}
+.cs-code { flex: 1; padding-right: 48px; }
+.cs-line { height: 11px; margin-bottom: 16px; border-radius: 4px; background: var(--bar); width: 60%; }
+/* varied widths + indents so the block of bars reads as code, not a list */
+.cs-line:nth-child(1) { width: 34%; }
+.cs-line:nth-child(2) { width: 58%; margin-left: 26px; }
+.cs-line:nth-child(3) { width: 46%; margin-left: 26px; }
+.cs-line:nth-child(4) { width: 64%; margin-left: 52px; }
+.cs-line:nth-child(5) { width: 30%; margin-left: 26px; }
+.cs-line:nth-child(6) { width: 52%; }
+.cs-line:nth-child(7) { width: 42%; margin-left: 26px; }
+.cs-line:nth-child(8) { width: 60%; margin-left: 52px; }
+/* integrated terminal panel docked at the bottom of the editor */
+.cs-terminal {
+	flex: none;
+	height: 42%;
+	display: flex;
+	flex-direction: column;
+	border-top: 1px solid rgb(245 234 211 / 0.1);
+}
+.cs-term-tabs {
+	height: 26px;
+	flex: none;
+	display: flex;
+	align-items: center;
+	gap: 16px;
+	padding: 0 16px;
+	border-bottom: 1px solid rgb(245 234 211 / 0.05);
+}
+.cs-tt { height: 8px; width: 44px; border-radius: 3px; background: rgb(245 234 211 / 0.13); }
+.cs-tt:nth-child(2) { width: 38px; }
+.cs-tt:nth-child(3) { width: 34px; }
+.cs-tt-on { width: 50px; background: var(--bar); }   /* active tab: brighter + wider */
+.cs-term-body { flex: 1; padding: 12px 16px 0; }
+.cs-term-line { height: 9px; margin-bottom: 13px; border-radius: 3px; background: var(--bar); width: 55%; }
+.cs-term-line:nth-child(2) { width: 70%; }
+.cs-term-line:nth-child(3) { width: 40%; }
+.cs-term-line:nth-child(5) { width: 28%; }
+/* prompt lines: a small green chevron block to the left of the command bar */
+.cs-prompt { position: relative; margin-left: 20px; width: 46%; }
+.cs-prompt::before {
+	content: "";
+	position: absolute;
+	left: -20px;
+	top: -1px;
+	width: 12px;
+	height: 11px;
+	border-radius: 3px;
+	background: rgb(126 200 130 / 0.55);
+}
+.cs-status {
+	height: 28px;
+	flex: none;
+	display: flex;
+	align-items: center;
+	gap: 14px;
+	padding: 0 16px;
+	border-top: 1px solid rgb(245 234 211 / 0.07);
+}
+.cs-status span { height: 9px; width: 52px; border-radius: 4px; background: var(--bar); }
+.cs-status i { flex: 1; }                /* spacer pushing the trailing segment right */
+.cs-status span:nth-child(3) { width: 32px; }

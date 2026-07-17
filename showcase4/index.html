@@ -48,8 +48,8 @@
 				<input type="range" id="s-hoverrad" min="0.05" max="1" step="0.05" value="0.35" />
 			</div>
 			<div class="ctrl">
-				<label>Hover dot size <span class="val" id="v-hoverdot">3.0</span></label>
-				<input type="range" id="s-hoverdot" min="1" max="10" step="0.5" value="3" />
+				<label>Hover dot size <span class="val" id="v-hoverdot">5.0</span></label>
+				<input type="range" id="s-hoverdot" min="1" max="10" step="0.5" value="5" />
 			</div>
 			<div class="ctrl">
 				<label>Hover fade <span class="val" id="v-hoverfade">2.0s</span></label>
@@ -446,6 +446,12 @@
 			<div class="ctrl">
 				<label>Section particles <span class="val" id="v-secpart">400</span></label>
 				<input type="range" id="s-secpart" min="0" max="3000" step="50" value="400" />
+			</div>
+			<div class="section-label">Section 3</div>
+			<div class="ctrl">
+				<label>S3 sky angle <span class="val" id="v-s3skyangle">280°</span></label>
+				<input type="range" id="s-s3skyangle" min="0" max="360" step="1" value="280" />
+				<div class="hint">Section 3's own sky heading — parks the sun/glow somewhere else so it reads as a different place.</div>
 			</div>
 			<button class="copy-btn" id="copyBtn">Copy settings</button>
 		</div>

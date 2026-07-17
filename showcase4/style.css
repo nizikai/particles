@@ -80,7 +80,7 @@ html.loading, html.loading body { overflow: hidden; height: 100%; }
 	to   { opacity: 0; filter: blur(10px); transform: scale(1.08); }
 }
 
-.scroll-track { height: 1400vh; }
+.scroll-track { height: 1805vh; }
 
 #webgl {
 	position: fixed;
@@ -377,3 +377,4 @@ html.loading, html.loading body { overflow: hidden; height: 100%; }
 	background: var(--accent);
 	box-shadow: 0 0 8px rgb(246 179 44 / 0.7);
 }
+

@@ -192,7 +192,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 	hoverCardEdgeMat.uniforms.u_cursorReveal.value = 1;
 	const hoverLogoPoints = [];
 	function makeHoverDots(mesh, refDiag, surfSpacing, edgeDensity = 1, mat = hoverDotMat, includeEdges = true) {
-		mat.uniforms.u_size.value = (mat === hoverCardMat || mat === hoverCardEdgeMat ? config.scHoverDotSize : config.hoverDotSize) * renderer.getPixelRatio();
+		mat.uniforms.u_size.value = (mat === hoverDotMat ? config.hoverDotSize : config.scHoverDotSize) * renderer.getPixelRatio();
 		const points = makeWireframePoints(mesh, refDiag, mat, surfSpacing, 20, edgeDensity, 1, false, includeEdges);
 		// child of the glass, not the sibling makeWireframePoints sets up: the
 		// dots then inherit its transform AND visibility, so they vanish with it
@@ -569,6 +569,8 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 	let easedScene = 0;         // smoothed 0..1, drives camera dolly only (capped at 500vh)
 	let easedOutro = 0;         // smoothed 0..1 for the extra 20vh outro
 	let easedShowcase = 0;      // smoothed 0..1 for the dark showcase carousel phase
+	let easedOutro2 = 0;        // smoothed 0..1 for the second wipe window (showcase -> ambience)
+	let easedAmbience = 0;      // smoothed 0..1 for the models-free ambience section (dust + sky only)
 	let easedSpin = 0;          // smoothed 0..1 carousel rotation, starts ramping at the outro so it's already turning during the transition wipe instead of sitting frozen until easedShowcase kicks in
 	// SCENE_RATIO is computed dynamically from config.outroStart in the tick loop
 	const pointer = { x: 0, y: 0, tx: 0, ty: 0 };
@@ -637,7 +639,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		sceneDetail: 2.5,       // hero-scene edge emphasis — higher = denser dots along each sharp edge + thinner surface scatter; doesn't touch the logo
 		hoverIntensity: 1,      // strength of the cursor spotlight of preloader dots over the glass logo (0 = off)
 		hoverRadius: 0.35,      // spotlight radius in screen units (1 = half the screen height)
-		hoverDotSize: 3,        // spotlight dot size (same scale as the intro's logo stand-in)
+		hoverDotSize: 5,        // spotlight dot size (same scale as the intro's logo stand-in)
 		particleCount: 800,
 		particleSize: 15,       // base point size in px
 		glowSpeed: 0.3,         // flake flutter + glint speed multiplier
@@ -687,6 +689,9 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		scEdgeRadius: 0.55,     // showcase dotted-perimeter cursor proximity
 		scHoverDotSize: 10,     // showcase spotlight dot size
 
+		// --- section 3 (ambience) — dust + sky only
+		s3SkyAngle: 280,        // section-3's own sky heading in degrees — a different place than the showcase's swept sky
+
 		rotationTurns: -2,      // turns over a full scroll (negative reverses)
 		groundX: 0,             // ground position offset (x)
 		groundY: 6,             // ground position offset (y)
@@ -703,7 +708,9 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		grain: 0.01,            // film grain + dither amount (also kills banding)
 		outroSpeed: 0.10,       // easing speed of the transition build/release (higher = snappier)
 		outroStart: 545,        // vh position where the glitch transition begins
-		trackHeight: 1400,      // total scroll track height in vh
+		trackHeight: 1805,      // total scroll track height in vh
+		outro2Start: 1400,      // vh position where the SECOND glitch transition (showcase -> ambience) begins
+		section3Start: 1505,    // vh position where the models-free ambience section fully takes over
 		transitionChroma: 0.05, // extra radial chromatic aberration at peak transition (added on top of the base "chroma" grade)
 		transitionStreak: 0.1,  // peak directional zoom-streak distance at full transition
 		wipeJitter: 0.1,        // how noisy/jagged the bottom-to-top wipe boundary gets at peak glitch
@@ -898,8 +905,14 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 
 	// applies hero or showcase lighting on demand — used for both the real render
 	// and the temporary "opposite state" preview render captured during the wipe
-	function applyLighting(active, t) {
-		if (active) {
+	function applyLighting(phase, t) {
+		if (phase === "ambience") {
+			// section 3 parks the sky at its own fixed heading (no glow sweep), so
+			// the ambience reads as a different place than the showcase
+			scene.backgroundRotation.y = THREE.MathUtils.degToRad(config.s3SkyAngle) + t * config.skySpeed;
+			scene.environmentRotation.y = scene.backgroundRotation.y;
+			keyLight.position.copy(keyLightBase);
+		} else if (phase === "showcase") {
 			scene.backgroundRotation.y = columnGroup.rotation.y * config.glowSpin + t * config.skySpeed;
 			scene.environmentRotation.y = scene.backgroundRotation.y;
 			const sunAz = scene.backgroundRotation.y + config.skyGlowX * Math.PI * 2;
@@ -909,6 +922,18 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 			scene.environmentRotation.y = heroSkyRotY;
 			keyLight.position.copy(keyLightBase);
 		}
+	}
+
+	// scroll phases: "hero" (bright logo scene), "showcase" (dark carousel WITH column+cards),
+	// "ambience" (the same dark dust+sky, NO models). Toggles group visibility for a phase —
+	// used both for the live render and to capture the transition wipe's opposite state.
+	function setPhaseVisibility(phase) {
+		const dark = phase !== "hero";
+		const models = phase === "showcase";       // ambience keeps only the dust + sky
+		showcaseGroup.visible = columnGroup.visible = models;
+		sectionDust.points.visible = dark;
+		core.visible = groundPivot.visible = particles.points.visible =
+			haze.visible = mistGroup.visible = !dark;
 	}
 
 	// --- the rotating core group -------------------------------------
@@ -2471,6 +2496,11 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		const rotProgress      = Math.min(scrollProgress / cr, 1) * (cr / sr); // keeps spinning through the veil sweep, freezes once dark
 		const outroProgress    = Math.min(1, Math.max(0, (scrollProgress - sr) / (cr - sr)));
 		const showcaseProgress = Math.max(0, (scrollProgress - cr) / (1 - cr));
+		// second transition (showcase -> models-free ambience) + the ambience section
+		const o2r = config.outro2Start  / config.trackHeight;
+		const s3r = config.section3Start / config.trackHeight;
+		const outro2Progress   = Math.min(1, Math.max(0, (scrollProgress - o2r) / (s3r - o2r)));
+		const ambienceProgress = Math.max(0, (scrollProgress - s3r) / (1 - s3r));
 		// same 0..1 span as showcaseProgress but starting at the outro (sr) instead
 		// of the showcase boundary (cr), so the carousel is already mid-spin by the
 		// time the wipe finishes instead of snapping from a standstill
@@ -2482,9 +2512,13 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		easedOutro     += (outroProgress    - easedOutro)     * (outroProgress    < easedOutro    ? Math.max(config.outroSpeed, 0.2) : config.outroSpeed);
 		easedShowcase  += (showcaseProgress - easedShowcase)  * (showcaseProgress < easedShowcase ? 0.2 : 0.08);
 		easedSpin      += (spinProgress     - easedSpin)      * (spinProgress     < easedSpin     ? 0.2 : 0.08);
+		easedOutro2    += (outro2Progress   - easedOutro2)    * (outro2Progress   < easedOutro2   ? Math.max(config.outroSpeed, 0.2) : config.outroSpeed);
+		easedAmbience  += (ambienceProgress - easedAmbience)  * (ambienceProgress < easedAmbience ? 0.2 : 0.08);
 		// while in showcase mode, keep the wipe pinned shut so that scrolling
 		// back up hands off through the wipe boundary instead of popping
 		if (easedShowcase > 0.001) easedOutro = 1;
+		// same handoff for the second wipe once the ambience section owns the frame
+		if (easedAmbience > 0.001) easedOutro2 = 1;
 
 		if (gyro.enabled && gyro.hasReading) {
 			gyro.x += (gyro.tx - gyro.x) * GYRO_SMOOTH;
@@ -2530,6 +2564,13 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		const transitionAmt = easedShowcase > 0.001 || showcaseProgress > 0
 			? Math.max(0, 1 - easedShowcase / config.transitionRelease)
 			: easedOutro;
+		// same glitch shape for the second wipe: builds through the outro2 window,
+		// then relaxes once the ambience section settles
+		const transition2Amt = easedAmbience > 0.001 || ambienceProgress > 0
+			? Math.max(0, 1 - easedAmbience / config.transitionRelease)
+			: easedOutro2;
+		// the two windows never overlap, so the live one is just the larger value
+		const glitchAmt = Math.max(transitionAmt, transition2Amt);
 
 		heroSkyRotY = config.skyAngle + easedProgress * Math.PI * config.skyTurns + t * config.skyDrift - pointer.x * 0.15;
 		scene.backgroundRotation.y = heroSkyRotY;
@@ -2555,7 +2596,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		gradePass.uniforms.uGrain.value = config.grain;
 		gradePass.uniforms.uChroma.value = config.chroma;
 		gradePass.uniforms.uTime.value = t;
-		gradePass.uniforms.uTransition.value = transitionAmt;
+		gradePass.uniforms.uTransition.value = glitchAmt;
 		gradePass.uniforms.uTransitionChroma.value = config.transitionChroma;
 		gradePass.uniforms.uTransitionStreak.value = config.transitionStreak;
 		gradePass.uniforms.uVignetteOuter.value = config.vignetteOuter;
@@ -2563,15 +2604,15 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		bloomPass.strength = introBloomStrength !== null ? introBloomStrength : config.bloom;
 		bloomPass.enabled = config.bloom > 0;
 
-		// phase switch: dark showcase vs. the original scene
+		// phase switch: hero (bright) vs. dark showcase vs. models-free ambience
 		const showcaseActive = easedShowcase > 0.001 || showcaseProgress > 0;
+		const ambienceActive = easedAmbience > 0.001 || ambienceProgress > 0;
+		const currentPhase = ambienceActive ? "ambience" : (showcaseActive ? "showcase" : "hero");
 		// don't touch the headline's opacity until its own intro reveal has
 		// fired (finishIntroSequence) — an inline style here beats the plain
 		// (non-animated) .pre-reveal class rule and would ghost it in early
 		if (introDone) document.querySelector(".headline").style.opacity = showcaseActive ? "0" : "1";
-		showcaseGroup.visible = columnGroup.visible = sectionDust.points.visible = showcaseActive;
-		core.visible = groundPivot.visible = particles.points.visible =
-			haze.visible = mistGroup.visible = !showcaseActive;
+		setPhaseVisibility(currentPhase);
 		scene.background = equirect;   // keep the hero's rich sky in the showcase too
 		// carousel pose + dust uniforms run unconditionally (cheap, harmless while
 		// invisible) so the showcase is already correctly posed for the transition
@@ -2583,7 +2624,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		// the dust rotates with the carousel as you scroll (a touch slower for
 		// depth parallax) so the field turns with us, plus a gentle idle drift
 		sectionDust.points.rotation.y = showcaseGroup.rotation.y * 0.6 + t * 0.02;
-		applyLighting(showcaseActive, t);
+		applyLighting(currentPhase, t);
 		updateGlassNets(t, dt);
 
 		// intro override: while the wireframe particles are showing, dim the
@@ -2598,30 +2639,34 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		}
 
 		// capture the "opposite" scene state for the wipe composite, only while
-		// actually inside the outro↔showcase transition window (zero cost outside it)
+		// actually inside a transition window (zero cost outside it). The compositor
+		// blends a "before" (mask 0) and "after" (mask 1) state; uCurrentIsShowcase
+		// flags which of tDiffuse/tOther is the after-state. Window 1 blends
+		// hero->showcase; window 2 blends showcase->ambience (models wiped away).
+		const inWindow2 = outro2Progress > 0 || easedAmbience > 0.001;
 		wipePass.uniforms.uTime.value = t;
-		wipePass.uniforms.uWipe.value = easedOutro;
-		wipePass.uniforms.uGlitch.value = transitionAmt;
-		wipePass.uniforms.uCurrentIsShowcase.value = showcaseActive ? 1 : 0;
+		wipePass.uniforms.uWipe.value = inWindow2 ? easedOutro2 : easedOutro;
+		wipePass.uniforms.uGlitch.value = glitchAmt;
+		wipePass.uniforms.uCurrentIsShowcase.value = (inWindow2 ? ambienceActive : showcaseActive) ? 1 : 0;
 		wipePass.uniforms.uJitter.value = config.wipeJitter;
 		wipePass.uniforms.uSoftness.value = config.wipeSoftness;
 		wipePass.uniforms.uNoiseScale.value = config.wipeNoiseScale;
 		wipePass.uniforms.uFlickerSpeed.value = config.wipeFlickerSpeed;
 		wipePass.uniforms.uWaveAmp.value = config.wipeWaveAmp;
 		wipePass.uniforms.uWaveTilt.value = config.wipeWaveTilt;
-		if (outroProgress > 0 && outroProgress < 1) {
-			const other = !showcaseActive;
-			showcaseGroup.visible = columnGroup.visible = sectionDust.points.visible = other;
-			core.visible = groundPivot.visible = particles.points.visible =
-				haze.visible = mistGroup.visible = !other;
-			applyLighting(other, t);
+		const capturePhase = (outroProgress > 0 && outroProgress < 1)
+			? (showcaseActive ? "hero" : "showcase")              // window 1: the opposite of current
+			: (outro2Progress > 0 && outro2Progress < 1)
+				? (ambienceActive ? "showcase" : "ambience")      // window 2: the opposite model state
+				: null;
+		if (capturePhase) {
+			setPhaseVisibility(capturePhase);
+			applyLighting(capturePhase, t);
 			renderer.setRenderTarget(otherRT);
 			renderer.render(scene, camera);
 			renderer.setRenderTarget(null);
-			showcaseGroup.visible = columnGroup.visible = sectionDust.points.visible = showcaseActive;
-			core.visible = groundPivot.visible = particles.points.visible =
-				haze.visible = mistGroup.visible = !showcaseActive;
-			applyLighting(showcaseActive, t);
+			setPhaseVisibility(currentPhase);
+			applyLighting(currentPhase, t);
 		}
 
 		setNetsVisible(false);   // keep the net out of every glass refraction FBO (else it refracts into the slab)
@@ -2715,13 +2760,18 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		if (autoScrolling) return;
 		const sr = config.outroStart / config.trackHeight;
 		const cr = config.showcaseStart / config.trackHeight;
-		// land PAST the showcase boundary far enough that the glitch/chroma has
-		// fully released — transitionAmt only hits 0 once showcaseProgress clears
-		// transitionRelease; landing exactly on cr parks on the effect's peak
-		const settle = Math.min(1, cr + (config.transitionRelease + 0.06) * (1 - cr));
+		const o2r = config.outro2Start  / config.trackHeight;
+		const s3r = config.section3Start / config.trackHeight;
+		// land PAST each transition boundary far enough that the glitch/chroma has
+		// fully released — the glitch only hits 0 once its section clears
+		// transitionRelease; landing exactly on the boundary parks on the peak
+		const settle  = Math.min(1, cr  + (config.transitionRelease + 0.06) * (1 - cr));
+		const settle2 = Math.min(1, s3r + (config.transitionRelease + 0.06) * (1 - s3r));
+		const max = document.documentElement.scrollHeight - window.innerHeight;
 		if (scrollProgress >= sr && scrollProgress < settle - 0.005) {
-			const max = document.documentElement.scrollHeight - window.innerHeight;
 			autoScrollTo(settle * max);
+		} else if (scrollProgress >= o2r && scrollProgress < settle2 - 0.005) {
+			autoScrollTo(settle2 * max);
 		}
 	}
 	function scheduleIdleCheck() {
@@ -2854,6 +2904,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 	bindSlider("s-scsettle", "v-scsettle", (v) => { config.scSettleRate = v; }, (v) => v.toFixed(2));
 	bindSlider("s-scglowgain", "v-scglowgain", (v) => { config.scGlowGain = v; }, (v) => v.toFixed(1));
 	bindSlider("s-scwavemove", "v-scwavemove", (v) => { config.scWaveMotion = v; }, (v) => v.toFixed(2));
+	bindSlider("s-s3skyangle", "v-s3skyangle", (v) => { config.s3SkyAngle = v; }, (v) => Math.round(v) + "°");
 	bindSlider("s-count", "v-count", (v) => { config.particleCount = Math.round(v); rebuildParticles(); }, (v) => String(Math.round(v)));
 	bindSlider("s-glow", "v-glow", (v) => { config.glowSpeed = v; }, (v) => v.toFixed(2) + "×");
 	bindSlider("s-size", "v-size", (v) => { config.particleSize = v; particles.mat.uniforms.u_size.value = v * renderer.getPixelRatio(); }, (v) => String(Math.round(v)));

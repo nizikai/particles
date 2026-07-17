@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<title>Editor Particles · Dark Ambience</title>
+	<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+	<canvas id="webgl"></canvas>
+
+	<!-- lofi VS Code skeleton — never rendered: CSS lays it out invisibly and
+	     main.js (makeSkeletonDots) samples its rects into the particle skeleton. -->
+	<div id="codeSkeleton" aria-hidden="true">
+		<div class="cs-stack">
+		<div class="cs-window">
+			<div class="cs-title"><span class="cs-dot"></span><span class="cs-dot"></span><span class="cs-dot"></span></div>
+			<div class="cs-body">
+				<div class="cs-activity"><span></span><span></span><span></span></div>
+				<div class="cs-sidebar">
+					<div class="cs-side-head"></div>
+					<div class="cs-file"></div>
+					<div class="cs-file cs-in"></div>
+					<div class="cs-file cs-in"></div>
+					<div class="cs-file"></div>
+				</div>
+				<div class="cs-main">
+					<div class="cs-tabs"><span class="cs-tab cs-tab-on"></span><span class="cs-tab"></span></div>
+					<div class="cs-editor">
+						<div class="cs-gutter"></div>
+						<div class="cs-code">
+							<div class="cs-line"></div><div class="cs-line"></div><div class="cs-line"></div>
+							<div class="cs-line"></div><div class="cs-line"></div><div class="cs-line"></div>
+						</div>
+					</div>
+					<div class="cs-terminal">
+						<div class="cs-term-tabs"><span class="cs-tt cs-tt-on"></span><span class="cs-tt"></span><span class="cs-tt"></span></div>
+						<div class="cs-term-body">
+							<div class="cs-term-line cs-prompt"></div>
+							<div class="cs-term-line"></div>
+							<div class="cs-term-line"></div>
+							<div class="cs-term-line cs-prompt"></div>
+							<div class="cs-term-line"></div>
+						</div>
+					</div>
+				</div>
+			</div>
+			<div class="cs-status"><span></span><i></i><span></span></div>
+		</div>
+		</div>
+	</div>
+
+	<div id="fps">— fps</div>
+
+	<div class="panel collapsed" id="panel">
+		<button class="panel-toggle" id="panelToggle">Controls</button>
+		<div class="panel-body">
+			<div class="section-label">Section 3</div>
+			<div class="ctrl">
+				<label>Skeleton depth <span class="val" id="v-s3depth">50px</span></label>
+				<input type="range" id="s-s3depth" min="0" max="200" step="2" value="50" />
+				<div class="hint">How far the particle skeleton floats in front of the glass slab (the parallax gap).</div>
+			</div>
+			<div class="ctrl">
+				<label>Glass tilt <span class="val" id="v-s3glasstilt">5.2°</span></label>
+				<input type="range" id="s-s3glasstilt" min="0" max="15" step="0.2" value="5.2" />
+				<div class="hint">How far the glass slab turns toward the cursor — the skeleton rides it at its depth gap, which makes the parallax.</div>
+			</div>
+			<div class="ctrl">
+				<label>Entrance tilt <span class="val" id="v-s3entertilt">65°</span></label>
+				<input type="range" id="s-s3entertilt" min="0" max="90" step="1" value="65" />
+				<div class="hint">How far the slab lies back at the start of the scroll before swinging up flat (0 = no entrance move).</div>
+			</div>
+			<div class="ctrl">
+				<label>Entrance rise <span class="val" id="v-s3enterrise">70%</span></label>
+				<input type="range" id="s-s3enterrise" min="0" max="150" step="5" value="70" />
+				<div class="hint">How far below the frame the slab starts, rising into place as the scroll lands (0 = tilt only).</div>
+			</div>
+			<div class="ctrl">
+				<label>Sky angle <span class="val" id="v-s3skyangle">280°</span></label>
+				<input type="range" id="s-s3skyangle" min="0" max="360" step="1" value="280" />
+				<div class="hint">Sky heading — parks the sun/glow.</div>
+			</div>
+			<div class="ctrl">
+				<label>Glass scale <span class="val" id="v-s3glassscale">1.18</span></label>
+				<input type="range" id="s-s3glassscale" min="1" max="1.8" step="0.02" value="1.18" />
+				<div class="hint">Glass footprint relative to the wireframe window.</div>
+			</div>
+			<div class="ctrl">
+				<label>Glass thickness <span class="val" id="v-s3glassthick">0.10</span></label>
+				<input type="range" id="s-s3glassthick" min="0" max="1.5" step="0.02" value="0.1" />
+			</div>
+			<div class="ctrl">
+				<label>Edge brightness <span class="val" id="v-s3edgebright">3.00×</span></label>
+				<input type="range" id="s-s3edgebright" min="0" max="3" step="0.1" value="3" />
+				<div class="hint">Brightness of the slab's dotted perimeter near the cursor.</div>
+			</div>
+			<div class="ctrl">
+				<label>Edge proximity <span class="val" id="v-s3edgerad">0.55</span></label>
+				<input type="range" id="s-s3edgerad" min="0.05" max="1" step="0.05" value="0.55" />
+			</div>
+			<div class="ctrl">
+				<label>Particle size <span class="val" id="v-s3dotsize">7</span></label>
+				<input type="range" id="s-s3dotsize" min="3" max="60" step="1" value="7" />
+			</div>
+			<div class="ctrl">
+				<label>Particle detail <span class="val" id="v-s3dotdetail">1.00×</span></label>
+				<input type="range" id="s-s3dotdetail" min="0.4" max="2.5" step="0.05" value="1" />
+				<div class="hint">Dot sampling density — higher packs the bars tighter. Resamples the skeleton.</div>
+			</div>
+			<div class="ctrl">
+				<label>Particle jitter <span class="val" id="v-s3dotjitter">0.55</span></label>
+				<input type="range" id="s-s3dotjitter" min="0" max="1.2" step="0.05" value="0.55" />
+				<div class="hint">Scatter off the sampling grid: 0 = crisp printed grid, high = hand-splattered.</div>
+			</div>
+			<div class="ctrl">
+				<label>Particle brightness <span class="val" id="v-s3dotbright">0.20×</span></label>
+				<input type="range" id="s-s3dotbright" min="0.2" max="3" step="0.05" value="0.2" />
+			</div>
+			<div class="ctrl">
+				<label>Shimmer <span class="val" id="v-s3shimmer">0.00</span></label>
+				<input type="range" id="s-s3shimmer" min="0" max="3" step="0.05" value="0" />
+				<div class="hint">Per-dot twinkle depth (0 = steady dots).</div>
+			</div>
+			<div class="ctrl">
+				<label>Hairline brightness <span class="val" id="v-s3linebright">0.30</span></label>
+				<input type="range" id="s-s3linebright" min="0" max="1" step="0.05" value="0.3" />
+				<div class="hint">Brightness of the dotted divider lines vs the bars.</div>
+			</div>
+			<div class="section-label">Ambience</div>
+			<div class="ctrl">
+				<label>Section particles <span class="val" id="v-secpart">400</span></label>
+				<input type="range" id="s-secpart" min="0" max="3000" step="50" value="400" />
+			</div>
+			<div class="section-label">Grade</div>
+			<div class="ctrl">
+				<label>Bloom <span class="val" id="v-bloom">0.15</span></label>
+				<input type="range" id="s-bloom" min="0" max="3" step="0.05" value="0.15" />
+			</div>
+			<div class="ctrl">
+				<label>Chromatic <span class="val" id="v-chroma">0.012</span></label>
+				<input type="range" id="s-chroma" min="0" max="0.2" step="0.005" value="0.012" />
+			</div>
+			<div class="ctrl">
+				<label>Grain <span class="val" id="v-grain">0.01</span></label>
+				<input type="range" id="s-grain" min="0" max="0.4" step="0.01" value="0.01" />
+			</div>
+			<button class="copy-btn" id="copyBtn">Copy settings</button>
+		</div>
+	</div>
+
+	<div class="scroll-track"></div>
+
+	<script type="importmap">
+	{
+		"imports": {
+			"three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+			"three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+		}
+	}
+	</script>
+	<script type="module" src="main.js"></script>
+</body>
+</html>
