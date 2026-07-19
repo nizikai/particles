@@ -1898,6 +1898,33 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 	const raycaster = new THREE.Raycaster();
 	let focusedCard = null;
 	let hoveredCard = null;
+	// click-a-slab → screen darkens → whole scene rushes at the camera → navigate
+	const TRANSITION_URL = "https://apple.com";
+	let transition = null;      // { t, done } once a slab is clicked
+	let camDolly = 0;           // forward camera push applied during the transition
+	let returnT = null;         // return animation clock: zoom out + fade in from black
+	const ZOOM_DUR = 0.9;       // zoom-in and zoom-out share this duration + easing so they mirror
+	// ease-in-out cubic — a stronger S-curve than smoothstep (less "linear" middle)
+	const easeInOut = (t) => { t = THREE.MathUtils.clamp(t, 0, 1); return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; };
+	const fadeEl = document.createElement("div");
+	fadeEl.style.cssText = "position:fixed;inset:0;background:#000;opacity:0;pointer-events:none;z-index:50";
+	document.body.appendChild(fadeEl);
+	// returning from the target page: fade back from black to the scene, mirroring
+	// the fade-to-black on the way out. sessionStorage survives the round trip in
+	// the same tab, so this covers both bfcache restores and full reloads.
+	window.addEventListener("pageshow", () => {
+		transition = null;
+		canvas.style.opacity = "";                          // undo the nav-time canvas hide
+		document.documentElement.style.background = "";
+		if (sessionStorage.getItem("navFade")) {
+			sessionStorage.removeItem("navFade");
+			// mirror the exit: start zoomed-in + black, then zoom back out to normal
+			// while the black fades away (both driven in the render loop, stays synced).
+			returnT = 0; camDolly = 9; fadeEl.style.opacity = "1";
+		} else {
+			returnT = null; camDolly = 0; fadeEl.style.opacity = "0";
+		}
+	});
 	// proximity hysteresis for hoveredCard: entering requires an exact raycast
 	// hit, but once hovered a card only releases once the cursor is more than
 	// HOVER_EXIT_PX pixels from the card's projected silhouette. This is done in
@@ -1933,13 +1960,21 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 			(clientX / window.innerWidth) * 2 - 1,
 			-(clientY / window.innerHeight) * 2 + 1
 		), camera);
-		const hit = raycaster.intersectObjects(cards.map((c) => c.mesh))[0];
-		return hit && cards.find((c) => c.mesh === hit.object);
+		// recursive hit: the frontmost object is usually a child (text plane, glass
+		// slab, hover proxy) of a card, so walk up to the owning card mesh.
+		for (const h of raycaster.intersectObjects(cards.map((c) => c.mesh), true)) {
+			if (h.object.isPoints || h.object.isLine) continue;   // net/edge dots aren't click targets
+			for (let o = h.object; o; o = o.parent) {
+				const c = cards.find((c) => c.mesh === o);
+				if (c) return c;
+			}
+		}
+		return null;
 	}
 	canvas.addEventListener("click", (e) => {
-		if (!showcaseGroup.visible) return;
-		const card = pickCard(e.clientX, e.clientY);
-		focusedCard = (card && card !== focusedCard) ? card : null;
+		if (!showcaseGroup.visible || transition) return;
+		if (!pickCard(e.clientX, e.clientY)) return;   // only a slab starts the transition
+		transition = { t: 0 };
 	});
 
 	// --- glass hover particles ---------------------------------------
@@ -2579,8 +2614,35 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 		particles.points.rotation.y = -easedProgress * Math.PI * 1.5 - t * 0.02;
 		particles.mat.uniforms.u_time.value = flakeTime;
 
+		// slab-click transition: the screen darkens first, then the camera dives
+		// forward so the whole scene (every card + column) rushes toward the viewer.
+		if (transition) {
+			transition.t += dt;
+			const T = transition.t;
+			// zoom FIRST: the whole scene rushes at the camera, then the black fades
+			// in smoothly once the dive is underway (trailing the motion, not leading).
+			camDolly = easeInOut(T / ZOOM_DUR) * 9;                        // scene rushes at the camera (eased)
+			fadeEl.style.opacity = THREE.MathUtils.smoothstep(T, 0, 0.7);   // black completes before the zoom does
+			if (T >= ZOOM_DUR && !transition.done) {
+				transition.done = true;
+				sessionStorage.setItem("navFade", "1");   // tell the return trip to fade in from black
+				// belt-and-suspenders so the browser's outgoing/back-forward snapshot is
+				// definitely black (a WebGL canvas can snapshot without the DOM overlay):
+				canvas.style.opacity = "0";
+				document.documentElement.style.background = "#000";
+				window.location.href = TRANSITION_URL;
+			}
+		}
+		// return trip: reverse of the exit — zoom out from the dive while the black lifts
+		if (returnT !== null) {
+			returnT += dt;
+			camDolly = 9 * (1 - easeInOut(returnT / ZOOM_DUR));                          // zoom back out (eased, mirrors the zoom-in)
+			fadeEl.style.opacity = 1 - THREE.MathUtils.smoothstep(returnT, 0.2, 0.9);   // black lifts to reveal the scene
+			if (returnT >= ZOOM_DUR) { returnT = null; camDolly = 0; fadeEl.style.opacity = 0; }
+		}
+
 		const baseZ = config.cameraDist - easedScene * 2.2 + easedOutro * 2.2;
-		camera.position.z = baseZ;
+		camera.position.z = baseZ - camDolly;
 		camera.position.x = -pointer.x * 0.6;
 		camera.position.y = 0.3 - pointer.y * 0.4;
 		camera.lookAt(0, 0, 0);
